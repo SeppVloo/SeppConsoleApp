@@ -404,7 +404,7 @@ namespace PongWinForms
                     var size = g.MeasureString(text, big);
                     g.DrawString(text, big, winBrush,
                         (ClientSize.Width - size.Width) / 2f,
-                        (ClientSize.Height - size.Height) / 2f);
+                        (ClientSize.Height - size.Height) / 2f); //dit is een voorbeeld
                 }
             }
         }
