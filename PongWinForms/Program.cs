@@ -8,19 +8,23 @@ namespace PongWinForms
         [STAThread]
         static void Main()
         {
+            // High-DPI aware app (Win10/11) – must be first
+            Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
 
-            // Default settings (can be loaded from user settings if desired)
-            var defaults = new GameSettings();
+            // Load persisted settings
+            var defaults = SettingsIO.Load();
 
+            // Show settings dialog first
             using var dlg = new SettingsForm(defaults);
             var result = dlg.ShowDialog();
+            if (result != DialogResult.OK || dlg.Result == null) return;
 
-            if (result != DialogResult.OK || dlg.Result == null)
-                return; // User cancelled
+            // Save chosen settings
+            SettingsIO.Save(dlg.Result);
 
-            // Start the game with selected settings
+            // Start game with chosen settings
             Application.Run(new MainForm(dlg.Result));
         }
     }
