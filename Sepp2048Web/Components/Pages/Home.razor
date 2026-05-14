@@ -24,6 +24,14 @@
         </div>
     </div>
 
+    <fieldset class="options-panel">
+        <legend>Besturing</legend>
+        <label><input type="checkbox" @bind="keyboardEnabled" /> Pijltjestoetsen</label>
+        <label><input type="checkbox" @bind="pointerEnabled" /> Slepen (muis / touch)</label>
+        <label><input type="checkbox" @bind="wheelEnabled" /> Twee-vinger gebaar (touchpad)</label>
+        <label><input type="checkbox" @bind="buttonsEnabled" /> Knoppen</label>
+    </fieldset>
+
     @if (hasWon)
     {
         <div class="alert alert-success" role="status">Je hebt 2048 bereikt. Je kunt gewoon doorspelen.</div>
@@ -36,12 +44,14 @@
 
     <div class="game-shell"
          tabindex="0"
-         title="Klik hier en gebruik de pijltjestoetsen of swipe"
+         title="Klik hier en gebruik de pijltjestoetsen of swipe/sleep"
          @onkeydown="HandleKeyDown"
          @onkeydown:preventDefault="true"
-         @ontouchstart="HandleTouchStart"
-         @ontouchend="HandleTouchEnd"
-         @ontouchmove:preventDefault="true">
+         @onpointerdown="HandlePointerDown"
+         @onpointerup="HandlePointerUp"
+         @onpointercancel="HandlePointerCancel"
+         @onwheel="HandleWheel"
+         @onwheel:preventDefault="true">
         <div class="board" aria-label="2048 spelbord">
             @for (var row = 0; row < BoardSize; row++)
             {
@@ -54,17 +64,20 @@
             }
         </div>
 
-        <div class="controls" aria-label="Bewegingsknoppen">
-            <div class="spacer"></div>
-            <button class="move-button" @onclick='() => Move(MoveDirection.Up)' aria-label="Omhoog">↑</button>
-            <div class="spacer"></div>
-            <button class="move-button" @onclick='() => Move(MoveDirection.Left)' aria-label="Links">←</button>
-            <button class="move-button" @onclick='() => Move(MoveDirection.Down)' aria-label="Omlaag">↓</button>
-            <button class="move-button" @onclick='() => Move(MoveDirection.Right)' aria-label="Rechts">→</button>
-        </div>
+        @if (buttonsEnabled)
+        {
+            <div class="controls" aria-label="Bewegingsknoppen">
+                <div class="spacer"></div>
+                <button class="move-button" @onclick='() => Move(MoveDirection.Up)' aria-label="Omhoog">↑</button>
+                <div class="spacer"></div>
+                <button class="move-button" @onclick='() => Move(MoveDirection.Left)' aria-label="Links">←</button>
+                <button class="move-button" @onclick='() => Move(MoveDirection.Down)' aria-label="Omlaag">↓</button>
+                <button class="move-button" @onclick='() => Move(MoveDirection.Right)' aria-label="Rechts">→</button>
+            </div>
+        }
     </div>
 
-    <p class="hint">Gebruik de pijltjestoetsen of de knoppen onder het bord.</p>
+    <p class="hint">Gebruik de pijltjestoetsen, sleep met de muis/touchpad of swipe op een touchscreen.</p>
 </div>
 
 @code {
@@ -78,10 +91,19 @@
     private bool hasWon;
     private bool isGameOver;
 
-    private double touchStartX;
-    private double touchStartY;
-    private bool touchActive;
+    private double pointerStartX;
+    private double pointerStartY;
+    private bool pointerActive;
     private const double SwipeThreshold = 30;
+
+    private const double WheelThreshold = 25;
+    private DateTime lastWheelMove = DateTime.MinValue;
+    private static readonly TimeSpan WheelCooldown = TimeSpan.FromMilliseconds(200);
+
+    private bool keyboardEnabled = true;
+    private bool pointerEnabled = true;
+    private bool wheelEnabled = true;
+    private bool buttonsEnabled = true;
 
     protected override void OnInitialized()
     {
@@ -103,6 +125,11 @@
 
     private void HandleKeyDown(KeyboardEventArgs args)
     {
+        if (!keyboardEnabled)
+        {
+            return;
+        }
+
         switch (args.Key)
         {
             case "ArrowUp":
@@ -131,29 +158,29 @@
         UpdateGameState();
     }
 
-    private void HandleTouchStart(TouchEventArgs args)
+    private void HandlePointerDown(PointerEventArgs args)
     {
-        if (args.Touches.Length == 0)
+        if (!pointerEnabled)
         {
             return;
         }
 
-        touchStartX = args.Touches[0].ClientX;
-        touchStartY = args.Touches[0].ClientY;
-        touchActive = true;
+        pointerStartX = args.ClientX;
+        pointerStartY = args.ClientY;
+        pointerActive = true;
     }
 
-    private void HandleTouchEnd(TouchEventArgs args)
+    private void HandlePointerUp(PointerEventArgs args)
     {
-        if (!touchActive || args.ChangedTouches.Length == 0)
+        if (!pointerActive)
         {
             return;
         }
 
-        touchActive = false;
+        pointerActive = false;
 
-        var deltaX = args.ChangedTouches[0].ClientX - touchStartX;
-        var deltaY = args.ChangedTouches[0].ClientY - touchStartY;
+        var deltaX = args.ClientX - pointerStartX;
+        var deltaY = args.ClientY - pointerStartY;
         var absX = Math.Abs(deltaX);
         var absY = Math.Abs(deltaY);
 
@@ -161,6 +188,50 @@
         {
             return;
         }
+
+        if (absX > absY)
+        {
+            Move(deltaX > 0 ? MoveDirection.Right : MoveDirection.Left);
+        }
+        else
+        {
+            Move(deltaY > 0 ? MoveDirection.Down : MoveDirection.Up);
+        }
+    }
+
+    private void HandlePointerCancel(PointerEventArgs args)
+    {
+        // De browser annuleert het pointer-event als de gebruiker gaat scrollen.
+        // We behandelen dat niet als een veeg.
+        pointerActive = false;
+    }
+
+    private void HandleWheel(WheelEventArgs args)
+    {
+        if (!wheelEnabled)
+        {
+            return;
+        }
+
+        // Twee-vinger gebaar op een touchpad levert tegenovergestelde delta's
+        // (omhoog scrollen = positieve deltaY voor 'content omhoog'), dus inverteren.
+        var deltaX = -args.DeltaX;
+        var deltaY = -args.DeltaY;
+        var absX = Math.Abs(deltaX);
+        var absY = Math.Abs(deltaY);
+
+        if (absX < WheelThreshold && absY < WheelThreshold)
+        {
+            return;
+        }
+
+        var now = DateTime.UtcNow;
+        if (now - lastWheelMove < WheelCooldown)
+        {
+            return;
+        }
+
+        lastWheelMove = now;
 
         if (absX > absY)
         {
