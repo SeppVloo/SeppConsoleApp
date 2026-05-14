@@ -1,0 +1,355 @@
+﻿@page "/"
+@rendermode InteractiveServer
+
+<PageTitle>2048</PageTitle>
+
+<div class="game-page">
+    <div class="game-header">
+        <div>
+            <h1>2048</h1>
+            <p>Combineer gelijke tegels en probeer 2048 te halen.</p>
+        </div>
+
+        <button class="btn btn-primary" @onclick="NewGame">Nieuw spel</button>
+    </div>
+
+    <div class="score-panel">
+        <div class="score-box">
+            <span>Score</span>
+            <strong>@score</strong>
+        </div>
+        <div class="score-box">
+            <span>Hoogste tegel</span>
+            <strong>@highestTile</strong>
+        </div>
+    </div>
+
+    @if (hasWon)
+    {
+        <div class="alert alert-success" role="status">Je hebt 2048 bereikt. Je kunt gewoon doorspelen.</div>
+    }
+
+    @if (isGameOver)
+    {
+        <div class="alert alert-warning" role="status">Geen zetten meer mogelijk. Start een nieuw spel.</div>
+    }
+
+    <div class="game-shell"
+         tabindex="0"
+         title="Klik hier en gebruik de pijltjestoetsen of swipe"
+         @onkeydown="HandleKeyDown"
+         @onkeydown:preventDefault="true"
+         @ontouchstart="HandleTouchStart"
+         @ontouchend="HandleTouchEnd"
+         @ontouchmove:preventDefault="true">
+        <div class="board" aria-label="2048 spelbord">
+            @for (var row = 0; row < BoardSize; row++)
+            {
+                @for (var column = 0; column < BoardSize; column++)
+                {
+                    var value = board[row, column];
+
+                    <div class="tile @GetTileCssClass(value)">@(value == 0 ? string.Empty : value)</div>
+                }
+            }
+        </div>
+
+        <div class="controls" aria-label="Bewegingsknoppen">
+            <div class="spacer"></div>
+            <button class="move-button" @onclick='() => Move(MoveDirection.Up)' aria-label="Omhoog">↑</button>
+            <div class="spacer"></div>
+            <button class="move-button" @onclick='() => Move(MoveDirection.Left)' aria-label="Links">←</button>
+            <button class="move-button" @onclick='() => Move(MoveDirection.Down)' aria-label="Omlaag">↓</button>
+            <button class="move-button" @onclick='() => Move(MoveDirection.Right)' aria-label="Rechts">→</button>
+        </div>
+    </div>
+
+    <p class="hint">Gebruik de pijltjestoetsen of de knoppen onder het bord.</p>
+</div>
+
+@code {
+    private const int BoardSize = 4;
+
+    private readonly int[,] board = new int[BoardSize, BoardSize];
+    private readonly Random random = new();
+
+    private int score;
+    private int highestTile = 2;
+    private bool hasWon;
+    private bool isGameOver;
+
+    private double touchStartX;
+    private double touchStartY;
+    private bool touchActive;
+    private const double SwipeThreshold = 30;
+
+    protected override void OnInitialized()
+    {
+        NewGame();
+    }
+
+    private void NewGame()
+    {
+        Array.Clear(board);
+        score = 0;
+        highestTile = 2;
+        hasWon = false;
+        isGameOver = false;
+
+        AddRandomTile();
+        AddRandomTile();
+        UpdateGameState();
+    }
+
+    private void HandleKeyDown(KeyboardEventArgs args)
+    {
+        switch (args.Key)
+        {
+            case "ArrowUp":
+                Move(MoveDirection.Up);
+                break;
+            case "ArrowDown":
+                Move(MoveDirection.Down);
+                break;
+            case "ArrowLeft":
+                Move(MoveDirection.Left);
+                break;
+            case "ArrowRight":
+                Move(MoveDirection.Right);
+                break;
+        }
+    }
+
+    private void Move(MoveDirection direction)
+    {
+        if (!ApplyMove(direction))
+        {
+            return;
+        }
+
+        AddRandomTile();
+        UpdateGameState();
+    }
+
+    private void HandleTouchStart(TouchEventArgs args)
+    {
+        if (args.Touches.Length == 0)
+        {
+            return;
+        }
+
+        touchStartX = args.Touches[0].ClientX;
+        touchStartY = args.Touches[0].ClientY;
+        touchActive = true;
+    }
+
+    private void HandleTouchEnd(TouchEventArgs args)
+    {
+        if (!touchActive || args.ChangedTouches.Length == 0)
+        {
+            return;
+        }
+
+        touchActive = false;
+
+        var deltaX = args.ChangedTouches[0].ClientX - touchStartX;
+        var deltaY = args.ChangedTouches[0].ClientY - touchStartY;
+        var absX = Math.Abs(deltaX);
+        var absY = Math.Abs(deltaY);
+
+        if (absX < SwipeThreshold && absY < SwipeThreshold)
+        {
+            return;
+        }
+
+        if (absX > absY)
+        {
+            Move(deltaX > 0 ? MoveDirection.Right : MoveDirection.Left);
+        }
+        else
+        {
+            Move(deltaY > 0 ? MoveDirection.Down : MoveDirection.Up);
+        }
+    }
+
+    private bool ApplyMove(MoveDirection direction)
+    {
+        var moved = false;
+
+        for (var index = 0; index < BoardSize; index++)
+        {
+            var originalLine = GetLine(index, direction);
+            var mergedLine = MergeLine(originalLine, out var gainedScore);
+
+            if (originalLine.SequenceEqual(mergedLine))
+            {
+                continue;
+            }
+
+            SetLine(index, direction, mergedLine);
+            score += gainedScore;
+            moved = true;
+        }
+
+        return moved;
+    }
+
+    private int[] GetLine(int index, MoveDirection direction)
+    {
+        var line = new int[BoardSize];
+
+        for (var offset = 0; offset < BoardSize; offset++)
+        {
+            line[offset] = direction switch
+            {
+                MoveDirection.Left => board[index, offset],
+                MoveDirection.Right => board[index, BoardSize - 1 - offset],
+                MoveDirection.Up => board[offset, index],
+                MoveDirection.Down => board[BoardSize - 1 - offset, index],
+                _ => 0
+            };
+        }
+
+        return line;
+    }
+
+    private void SetLine(int index, MoveDirection direction, int[] line)
+    {
+        for (var offset = 0; offset < BoardSize; offset++)
+        {
+            switch (direction)
+            {
+                case MoveDirection.Left:
+                    board[index, offset] = line[offset];
+                    break;
+                case MoveDirection.Right:
+                    board[index, BoardSize - 1 - offset] = line[offset];
+                    break;
+                case MoveDirection.Up:
+                    board[offset, index] = line[offset];
+                    break;
+                case MoveDirection.Down:
+                    board[BoardSize - 1 - offset, index] = line[offset];
+                    break;
+            }
+        }
+    }
+
+    private static int[] MergeLine(int[] line, out int gainedScore)
+    {
+        var compacted = line.Where(value => value != 0).ToList();
+        var merged = new List<int>(BoardSize);
+        gainedScore = 0;
+
+        for (var index = 0; index < compacted.Count; index++)
+        {
+            if (index + 1 < compacted.Count && compacted[index] == compacted[index + 1])
+            {
+                var value = compacted[index] * 2;
+                merged.Add(value);
+                gainedScore += value;
+                index++;
+            }
+            else
+            {
+                merged.Add(compacted[index]);
+            }
+        }
+
+        while (merged.Count < BoardSize)
+        {
+            merged.Add(0);
+        }
+
+        return merged.ToArray();
+    }
+
+    private void AddRandomTile()
+    {
+        var emptyCells = new List<(int Row, int Column)>();
+
+        for (var rowIndex = 0; rowIndex < BoardSize; rowIndex++)
+        {
+            for (var columnIndex = 0; columnIndex < BoardSize; columnIndex++)
+            {
+                if (board[rowIndex, columnIndex] == 0)
+                {
+                    emptyCells.Add((rowIndex, columnIndex));
+                }
+            }
+        }
+
+        if (emptyCells.Count == 0)
+        {
+            return;
+        }
+
+        var selectedCell = emptyCells[random.Next(emptyCells.Count)];
+        board[selectedCell.Row, selectedCell.Column] = random.NextDouble() < 0.9 ? 2 : 4;
+    }
+
+    private void UpdateGameState()
+    {
+        highestTile = board.Cast<int>().Max();
+
+        if (!hasWon && highestTile >= 2048)
+        {
+            hasWon = true;
+        }
+
+        isGameOver = !CanMakeAnyMove();
+    }
+
+    private bool CanMakeAnyMove()
+    {
+        for (var row = 0; row < BoardSize; row++)
+        {
+            for (var column = 0; column < BoardSize; column++)
+            {
+                var current = board[row, column];
+
+                if (current == 0)
+                {
+                    return true;
+                }
+
+                if (row + 1 < BoardSize && board[row + 1, column] == current)
+                {
+                    return true;
+                }
+
+                if (column + 1 < BoardSize && board[row, column + 1] == current)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private static string GetTileCssClass(int value) => value switch
+    {
+        0 => "tile-0",
+        2 => "tile-2",
+        4 => "tile-4",
+        8 => "tile-8",
+        16 => "tile-16",
+        32 => "tile-32",
+        64 => "tile-64",
+        128 => "tile-128",
+        256 => "tile-256",
+        512 => "tile-512",
+        1024 => "tile-1024",
+        2048 => "tile-2048",
+        _ => "tile-super"
+    };
+
+    private enum MoveDirection
+    {
+        Up,
+        Down,
+        Left,
+        Right
+    }
+}
