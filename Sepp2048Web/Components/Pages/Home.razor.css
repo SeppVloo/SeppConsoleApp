@@ -96,6 +96,7 @@
     border-radius: 16px;
     background: #bbada0;
     aspect-ratio: 1;
+    touch-action: none;
 }
 
 .tile {
