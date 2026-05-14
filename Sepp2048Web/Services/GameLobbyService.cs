@@ -33,8 +33,8 @@ public sealed class GameLobbyService
         }
     }
 
-    public int Score { get; private set; }
-    public int HighestTile { get; private set; }
+    // Winning score for the game (points required to win). Default is 2048.
+    public int WinningScore { get; private set; } = 2048;
     public bool Started { get; private set; }
     public bool HasWon { get; private set; }
     public bool IsGameOver { get; private set; }
@@ -93,7 +93,7 @@ public sealed class GameLobbyService
         }
     }
 
-    public void StartGame(Guid playerId)
+    public void StartGame(Guid playerId, int winningScore = 2048)
     {
         lock (sync)
         {
@@ -108,8 +108,14 @@ public sealed class GameLobbyService
             }
 
             Array.Clear(board);
-            Score = 0;
-            HighestTile = 0;
+            // set the winning score for this game and reset player scores
+            WinningScore = winningScore > 0 ? winningScore : 2048;
+
+            for (var i = 0; i < players.Count; i++)
+            {
+                players[i] = players[i] with { Score = 0, HighestTile = 0 };
+            }
+
             HasWon = false;
             IsGameOver = false;
             Started = true;
@@ -182,8 +188,7 @@ public sealed class GameLobbyService
     private void ResetCore()
     {
         Array.Clear(board);
-        Score = 0;
-        HighestTile = 0;
+        WinningScore = 2048;
         HasWon = false;
         IsGameOver = false;
         Started = false;
@@ -193,6 +198,7 @@ public sealed class GameLobbyService
     private bool ApplyMove(MoveDirection direction)
     {
         var moved = false;
+        var totalGained = 0;
 
         for (var index = 0; index < BoardSize; index++)
         {
@@ -205,8 +211,23 @@ public sealed class GameLobbyService
             }
 
             SetLine(index, direction, mergedLine);
-            Score += gainedScore;
+            totalGained += gainedScore;
             moved = true;
+        }
+
+        if (moved)
+        {
+            // assign gained points to the current player
+            var player = players.FirstOrDefault(p => p.Id == CurrentPlayerId);
+            if (player is not null)
+            {
+                var idx = players.FindIndex(p => p.Id == player.Id);
+                var newScore = player.Score + totalGained;
+                // update player's highest tile based on the current board state
+                var boardMax = board.Cast<int>().Max();
+                var newHighest = Math.Max(player.HighestTile, boardMax);
+                players[idx] = player with { Score = newScore, HighestTile = newHighest };
+            }
         }
 
         return moved;
@@ -308,9 +329,8 @@ public sealed class GameLobbyService
 
     private void UpdateGameState()
     {
-        HighestTile = board.Cast<int>().Max();
-
-        if (!HasWon && HighestTile >= 2048)
+        // A player wins when any player's score reaches or exceeds the winning score
+        if (!HasWon && players.Any(p => p.Score >= WinningScore))
         {
             HasWon = true;
         }
@@ -349,7 +369,7 @@ public sealed class GameLobbyService
     private void NotifyChanged() => Changed?.Invoke();
 }
 
-public sealed record Player(Guid Id, string Name);
+public sealed record Player(Guid Id, string Name, int Score = 0, int HighestTile = 0);
 
 public enum MoveDirection
 {

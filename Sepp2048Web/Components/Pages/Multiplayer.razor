@@ -2,7 +2,7 @@
 @rendermode InteractiveServer
 @using Sepp2048Web.Services
 @implements IDisposable
-@inject GameLobbyService Lobby
+@inject RoomManager RoomManager
 
 <PageTitle>2048 - Multiplayer</PageTitle>
 
@@ -14,11 +14,44 @@
         </div>
     </div>
 
-    @if (me is null)
+    <div class="room-selection">
+        <h3>Rooms</h3>
+        @if (RoomManager.Rooms.Count == 0)
+        {
+            <p><em>Geen rooms aangemaakt.</em></p>
+        }
+        else
+        {
+            <ul class="room-list">
+                @foreach (var room in RoomManager.Rooms)
+                {
+                    var isSelected = selectedRoom is not null && selectedRoom.Id == room.Id;
+                    <li>
+                        <button class="btn btn-link" @onclick="() => SelectRoom(room.Id)">@(room.Name)</button>
+                        @if (isSelected)
+                        {
+                            <strong> (geselecteerd)</strong>
+                        }
+                    </li>
+                }
+            </ul>
+        }
+
+        <div class="create-room">
+            <input class="form-control" placeholder="Nieuwe room naam" @bind="roomNameInput" />
+            <button class="btn btn-primary" @onclick="CreateRoom">Maak room</button>
+        </div>
+    </div>
+
+    @if (selectedRoom is not null && me is null)
     {
         <div class="join-panel">
             <h2>Aanmelden</h2>
-            @if (Lobby.Started)
+            @if (activeLobby is null)
+            {
+                <p>Kies eerst een room om deel te nemen.</p>
+            }
+            else if (activeLobby.Started)
             {
                 <p>Het spel is al gestart. Wacht tot het spel afgelopen is.</p>
             }
@@ -41,14 +74,14 @@
             }
 
             <h3>Spelers in de lobby</h3>
-            @if (Lobby.Players.Count == 0)
+            @if (activeLobby is null || activeLobby.Players.Count == 0)
             {
                 <p><em>Nog geen spelers aangemeld.</em></p>
             }
             else
             {
                 <ul class="player-list">
-                    @foreach (var player in Lobby.Players)
+                    @foreach (var player in activeLobby.Players)
                     {
                         <li>@player.Name</li>
                     }
@@ -60,52 +93,52 @@
     {
         <div class="score-panel">
             <div class="score-box">
-                <span>Score</span>
-                <strong>@Lobby.Score</strong>
-            </div>
-            <div class="score-box">
-                <span>Hoogste tegel</span>
-                <strong>@Lobby.HighestTile</strong>
+                <span>Winnende score</span>
+                <strong>@(activeLobby?.WinningScore ?? 2048)</strong>
             </div>
             <div class="score-box">
                 <span>Aan zet</span>
-                <strong>@(Lobby.GetCurrentPlayer()?.Name ?? "-")</strong>
+                <strong>@(activeLobby?.GetCurrentPlayer()?.Name ?? "-")</strong>
             </div>
         </div>
 
         <div class="player-bar">
             <span>Spelers:</span>
-            @foreach (var player in Lobby.Players)
+            @foreach (var player in activeLobby?.Players ?? Array.Empty<Player>())
             {
-                var isCurrent = Lobby.Started && player.Id == Lobby.CurrentPlayerId;
+                var isCurrent = (activeLobby?.Started ?? false) && player.Id == (activeLobby?.CurrentPlayerId ?? Guid.Empty);
                 var isMe = player.Id == me.Id;
                 <span class="player-chip @(isCurrent ? "current" : "") @(isMe ? "me" : "")">
-                    @player.Name@(isMe ? " (jij)" : "")
+                    @player.Name@(isMe ? " (jij)" : "") - @player.Score
                 </span>
             }
         </div>
 
-        @if (!Lobby.Started)
+        @if (!(activeLobby?.Started ?? false))
         {
             <div class="start-panel">
                 <p>Wachten tot een speler het spel start.</p>
+                <div class="mb-2">
+                    <label>Winnende score</label>
+                    <input class="form-control" type="number" @bind="winningScoreInput" min="2" />
+                </div>
                 <button class="btn btn-primary" @onclick="StartGame">Start spel</button>
                 <button class="btn btn-link" @onclick="Leave">Verlaat lobby</button>
             </div>
         }
         else
         {
-            @if (Lobby.HasWon)
+            @if (activeLobby?.HasWon ?? false)
             {
                 <div class="alert alert-success">2048 bereikt. Speel gerust door.</div>
             }
 
-            @if (Lobby.IsGameOver)
+            @if (activeLobby?.IsGameOver ?? false)
             {
                 <div class="alert alert-warning">Geen zetten meer mogelijk.</div>
             }
 
-            var isMyTurn = Lobby.CurrentPlayerId == me.Id;
+            var isMyTurn = (activeLobby?.CurrentPlayerId ?? Guid.Empty) == me.Id;
 
             <div class="game-shell @(isMyTurn ? "" : "disabled")"
                  tabindex="0"
@@ -113,7 +146,7 @@
                  @onkeydown:preventDefault="true">
                 <div class="board" aria-label="2048 spelbord">
                     @{
-                        var board = Lobby.Board;
+                        var board = activeLobby?.Board ?? new int[GameLobbyService.BoardSize, GameLobbyService.BoardSize];
                     }
                     @for (var row = 0; row < GameLobbyService.BoardSize; row++)
                     {
@@ -135,8 +168,8 @@
                 </div>
             </div>
 
-            <p class="hint">
-                @(isMyTurn ? "Het is jouw beurt." : $"Wachten op {Lobby.GetCurrentPlayer()?.Name}.")
+                <p class="hint">
+                @(isMyTurn ? "Het is jouw beurt." : $"Wachten op {activeLobby?.GetCurrentPlayer()?.Name}.")
             </p>
 
             <button class="btn btn-link" @onclick="Leave">Verlaat lobby</button>
@@ -148,14 +181,32 @@
     private Player? me;
     private string nameInput = string.Empty;
     private string? joinError;
+    private int winningScoreInput = 2048;
+
+    private GameRoom? selectedRoom;
+    private GameLobbyService? activeLobby;
+    private string roomNameInput = string.Empty;
 
     protected override void OnInitialized()
     {
-        Lobby.Changed += OnLobbyChanged;
+        var rm = RoomManager;
+        rm.Changed += OnRoomsChanged;
+        OnRoomsChanged();
     }
 
     private async void OnLobbyChanged()
     {
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async void OnRoomsChanged()
+    {
+        // if no room selected but rooms exist, auto-select the first one
+        if (selectedRoom is null && RoomManager.Rooms.Count > 0)
+        {
+            SelectRoom(RoomManager.Rooms[0].Id);
+        }
+
         await InvokeAsync(StateHasChanged);
     }
 
@@ -164,7 +215,12 @@
         joinError = null;
         try
         {
-            me = Lobby.AddPlayer(nameInput);
+            if (activeLobby is null)
+            {
+                throw new InvalidOperationException("Geen actieve room geselecteerd.");
+            }
+
+            me = activeLobby.AddPlayer(nameInput);
         }
         catch (Exception ex)
         {
@@ -176,7 +232,7 @@
     {
         if (me is not null)
         {
-            Lobby.StartGame(me.Id);
+            activeLobby?.StartGame(me.Id, winningScoreInput);
         }
     }
 
@@ -184,7 +240,7 @@
     {
         if (me is not null)
         {
-            Lobby.RemovePlayer(me.Id);
+            activeLobby?.RemovePlayer(me.Id);
             me = null;
             nameInput = string.Empty;
         }
@@ -197,7 +253,7 @@
             return;
         }
 
-        Lobby.TryMove(me.Id, direction);
+        activeLobby?.TryMove(me.Id, direction);
     }
 
     private void HandleKeyDown(KeyboardEventArgs args)
@@ -243,10 +299,48 @@
 
     public void Dispose()
     {
-        Lobby.Changed -= OnLobbyChanged;
+        var rm = RoomManager;
+        if (rm is not null)
+        {
+            rm.Changed -= OnRoomsChanged;
+        }
+
+        if (activeLobby is not null)
+        {
+            activeLobby.Changed -= OnLobbyChanged;
+        }
         if (me is not null)
         {
-            Lobby.RemovePlayer(me.Id);
+            activeLobby?.RemovePlayer(me.Id);
         }
+    }
+
+    private void CreateRoom()
+    {
+        var rm = RoomManager;
+        var room = rm.CreateRoom(roomNameInput);
+        roomNameInput = string.Empty;
+        SelectRoom(room.Id);
+    }
+
+    private void SelectRoom(Guid id)
+    {
+        var rm = RoomManager;
+        selectedRoom = rm.GetRoom(id);
+
+        if (activeLobby is not null)
+        {
+            activeLobby.Changed -= OnLobbyChanged;
+        }
+
+        activeLobby = selectedRoom?.Lobby;
+
+        if (activeLobby is not null)
+        {
+            activeLobby.Changed += OnLobbyChanged;
+        }
+
+        // ensure UI updates after selection
+        InvokeAsync(StateHasChanged);
     }
 }
