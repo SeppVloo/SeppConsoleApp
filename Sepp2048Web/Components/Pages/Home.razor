@@ -68,11 +68,11 @@
         {
             <div class="controls" aria-label="Bewegingsknoppen">
                 <div class="spacer"></div>
-                <button class="move-button" @onclick='() => Move(MoveDirection.Up)' aria-label="Omhoog">↑</button>
+                <button class="move-button" @onclick='() => Move(MoveDirection.Up)' aria-label="Omhoog">@((MarkupString)"&uarr;")</button>
                 <div class="spacer"></div>
-                <button class="move-button" @onclick='() => Move(MoveDirection.Left)' aria-label="Links">←</button>
-                <button class="move-button" @onclick='() => Move(MoveDirection.Down)' aria-label="Omlaag">↓</button>
-                <button class="move-button" @onclick='() => Move(MoveDirection.Right)' aria-label="Rechts">→</button>
+                <button class="move-button" @onclick='() => Move(MoveDirection.Left)' aria-label="Links">@((MarkupString)"&larr;")</button>
+                <button class="move-button" @onclick='() => Move(MoveDirection.Down)' aria-label="Omlaag">@((MarkupString)"&darr;")</button>
+                <button class="move-button" @onclick='() => Move(MoveDirection.Right)' aria-label="Rechts">@((MarkupString)"&rarr;")</button>
             </div>
         }
     </div>

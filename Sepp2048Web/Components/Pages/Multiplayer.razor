@@ -1,0 +1,252 @@
+@page "/multiplayer"
+@rendermode InteractiveServer
+@using Sepp2048Web.Services
+@implements IDisposable
+@inject GameLobbyService Lobby
+
+<PageTitle>2048 - Multiplayer</PageTitle>
+
+<div class="game-page">
+    <div class="game-header">
+        <div>
+            <h1>2048 multiplayer</h1>
+            <p>Meld je aan met je naam en speel om beurten op verschillende apparaten.</p>
+        </div>
+    </div>
+
+    @if (me is null)
+    {
+        <div class="join-panel">
+            <h2>Aanmelden</h2>
+            @if (Lobby.Started)
+            {
+                <p>Het spel is al gestart. Wacht tot het spel afgelopen is.</p>
+            }
+            else
+            {
+                <form @onsubmit="Join" @onsubmit:preventDefault="true">
+                    <input class="form-control name-input"
+                           placeholder="Jouw naam"
+                           maxlength="20"
+                           @bind="nameInput"
+                           @bind:event="oninput" />
+                    <button class="btn btn-primary" type="submit" disabled="@string.IsNullOrWhiteSpace(nameInput)">
+                        Doe mee
+                    </button>
+                </form>
+                @if (!string.IsNullOrEmpty(joinError))
+                {
+                    <p class="error">@joinError</p>
+                }
+            }
+
+            <h3>Spelers in de lobby</h3>
+            @if (Lobby.Players.Count == 0)
+            {
+                <p><em>Nog geen spelers aangemeld.</em></p>
+            }
+            else
+            {
+                <ul class="player-list">
+                    @foreach (var player in Lobby.Players)
+                    {
+                        <li>@player.Name</li>
+                    }
+                </ul>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="score-panel">
+            <div class="score-box">
+                <span>Score</span>
+                <strong>@Lobby.Score</strong>
+            </div>
+            <div class="score-box">
+                <span>Hoogste tegel</span>
+                <strong>@Lobby.HighestTile</strong>
+            </div>
+            <div class="score-box">
+                <span>Aan zet</span>
+                <strong>@(Lobby.GetCurrentPlayer()?.Name ?? "-")</strong>
+            </div>
+        </div>
+
+        <div class="player-bar">
+            <span>Spelers:</span>
+            @foreach (var player in Lobby.Players)
+            {
+                var isCurrent = Lobby.Started && player.Id == Lobby.CurrentPlayerId;
+                var isMe = player.Id == me.Id;
+                <span class="player-chip @(isCurrent ? "current" : "") @(isMe ? "me" : "")">
+                    @player.Name@(isMe ? " (jij)" : "")
+                </span>
+            }
+        </div>
+
+        @if (!Lobby.Started)
+        {
+            <div class="start-panel">
+                <p>Wachten tot een speler het spel start.</p>
+                <button class="btn btn-primary" @onclick="StartGame">Start spel</button>
+                <button class="btn btn-link" @onclick="Leave">Verlaat lobby</button>
+            </div>
+        }
+        else
+        {
+            @if (Lobby.HasWon)
+            {
+                <div class="alert alert-success">2048 bereikt. Speel gerust door.</div>
+            }
+
+            @if (Lobby.IsGameOver)
+            {
+                <div class="alert alert-warning">Geen zetten meer mogelijk.</div>
+            }
+
+            var isMyTurn = Lobby.CurrentPlayerId == me.Id;
+
+            <div class="game-shell @(isMyTurn ? "" : "disabled")"
+                 tabindex="0"
+                 @onkeydown="HandleKeyDown"
+                 @onkeydown:preventDefault="true">
+                <div class="board" aria-label="2048 spelbord">
+                    @{
+                        var board = Lobby.Board;
+                    }
+                    @for (var row = 0; row < GameLobbyService.BoardSize; row++)
+                    {
+                        @for (var column = 0; column < GameLobbyService.BoardSize; column++)
+                        {
+                            var value = board[row, column];
+                            <div class="tile @GetTileCssClass(value)">@(value == 0 ? string.Empty : value)</div>
+                        }
+                    }
+                </div>
+
+                <div class="controls" aria-label="Bewegingsknoppen">
+                    <div class="spacer"></div>
+                    <button class="move-button" disabled="@(!isMyTurn)" @onclick='() => Move(MoveDirection.Up)'>@((MarkupString)"&uarr;")</button>
+                    <div class="spacer"></div>
+                    <button class="move-button" disabled="@(!isMyTurn)" @onclick='() => Move(MoveDirection.Left)'>@((MarkupString)"&larr;")</button>
+                    <button class="move-button" disabled="@(!isMyTurn)" @onclick='() => Move(MoveDirection.Down)'>@((MarkupString)"&darr;")</button>
+                    <button class="move-button" disabled="@(!isMyTurn)" @onclick='() => Move(MoveDirection.Right)'>@((MarkupString)"&rarr;")</button>
+                </div>
+            </div>
+
+            <p class="hint">
+                @(isMyTurn ? "Het is jouw beurt." : $"Wachten op {Lobby.GetCurrentPlayer()?.Name}.")
+            </p>
+
+            <button class="btn btn-link" @onclick="Leave">Verlaat lobby</button>
+        }
+    }
+</div>
+
+@code {
+    private Player? me;
+    private string nameInput = string.Empty;
+    private string? joinError;
+
+    protected override void OnInitialized()
+    {
+        Lobby.Changed += OnLobbyChanged;
+    }
+
+    private async void OnLobbyChanged()
+    {
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void Join()
+    {
+        joinError = null;
+        try
+        {
+            me = Lobby.AddPlayer(nameInput);
+        }
+        catch (Exception ex)
+        {
+            joinError = ex.Message;
+        }
+    }
+
+    private void StartGame()
+    {
+        if (me is not null)
+        {
+            Lobby.StartGame(me.Id);
+        }
+    }
+
+    private void Leave()
+    {
+        if (me is not null)
+        {
+            Lobby.RemovePlayer(me.Id);
+            me = null;
+            nameInput = string.Empty;
+        }
+    }
+
+    private void Move(MoveDirection direction)
+    {
+        if (me is null)
+        {
+            return;
+        }
+
+        Lobby.TryMove(me.Id, direction);
+    }
+
+    private void HandleKeyDown(KeyboardEventArgs args)
+    {
+        if (me is null)
+        {
+            return;
+        }
+
+        switch (args.Key)
+        {
+            case "ArrowUp":
+                Move(MoveDirection.Up);
+                break;
+            case "ArrowDown":
+                Move(MoveDirection.Down);
+                break;
+            case "ArrowLeft":
+                Move(MoveDirection.Left);
+                break;
+            case "ArrowRight":
+                Move(MoveDirection.Right);
+                break;
+        }
+    }
+
+    private static string GetTileCssClass(int value) => value switch
+    {
+        0 => "tile-0",
+        2 => "tile-2",
+        4 => "tile-4",
+        8 => "tile-8",
+        16 => "tile-16",
+        32 => "tile-32",
+        64 => "tile-64",
+        128 => "tile-128",
+        256 => "tile-256",
+        512 => "tile-512",
+        1024 => "tile-1024",
+        2048 => "tile-2048",
+        _ => "tile-super"
+    };
+
+    public void Dispose()
+    {
+        Lobby.Changed -= OnLobbyChanged;
+        if (me is not null)
+        {
+            Lobby.RemovePlayer(me.Id);
+        }
+    }
+}

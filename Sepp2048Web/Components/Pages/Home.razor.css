@@ -82,6 +82,8 @@
     border-radius: 20px;
     background: #faf8ef;
     outline: none;
+    max-width: 480px;
+    margin: 0 auto;
 }
 
 .game-shell:focus {
