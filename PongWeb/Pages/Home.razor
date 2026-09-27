@@ -187,8 +187,12 @@ else
 
 	private string SetupText()
 	{
+		var ai = AiSlots();
+		string Who(int s) => s == 0 ? "Jij" : ai.Contains(s) ? "🤖" : "👤";
+		var teams = string.Join(" vs ", Enumerable.Range(0, 2).Select(t =>
+			string.Join(" + ", Enumerable.Range(0, _teamSize * 2).Where(s => s % 2 == t).Select(Who))));
 		var r = RemoteSlots().Count;
-		return r == 0 ? "Alleen jij tegen de computer." : $"Je wacht op {r} andere speler{(r > 1 ? "s" : "")} op dit wifi-netwerk.";
+		return teams + (r == 0 ? "" : $" · wacht op {r} andere speler{(r > 1 ? "s" : "")} op dit wifi-netwerk");
 	}
 
 	private string TeamLabel(int team)
