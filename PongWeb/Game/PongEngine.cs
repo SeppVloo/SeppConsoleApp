@@ -211,13 +211,13 @@ public sealed class PongEngine
         {
             float t = (w.X - (_prevBx + b)) / (_bx - _prevBx);
             float y = _prevBy + (_by - _prevBy) * t;
-            if (y + b > w.Y && y < w.Y + w.H) { _bx = w.X - b; _by = y; _vx = -Math.Abs(_vx); hit = true; }
+            if (y + b > w.Y && y < w.Y + w.H) { _bx = w.X - b; _by = y; _vx = -Math.Abs(_vx); Deflect(w, -1); hit = true; }
         }
         else if (_vx < 0 && _prevBx >= w.X + WallWidth && _bx <= w.X + WallWidth)
         {
             float t = (_prevBx - (w.X + WallWidth)) / (_prevBx - _bx);
             float y = _prevBy + (_by - _prevBy) * t;
-            if (y + b > w.Y && y < w.Y + w.H) { _bx = w.X + WallWidth; _by = y; _vx = Math.Abs(_vx); hit = true; }
+            if (y + b > w.Y && y < w.Y + w.H) { _bx = w.X + WallWidth; _by = y; _vx = Math.Abs(_vx); Deflect(w, 1); hit = true; }
         }
 
         // Top/bottom edge or any remaining overlap: push out vertically.
@@ -234,6 +234,21 @@ public sealed class PongEngine
         w.Hp--;
         if (w.Hp <= 0) _walls.RemoveAt(index);
         else _walls[index] = w;
+    }
+
+    // Near the ends of a wall the ball is turned away from the centre, stronger the closer to the edge.
+    // Hits in the middle third bounce straight as before.
+    private void Deflect(WallInfo w, float dirX)
+    {
+        float rel = Math.Clamp((_by + GameState.BallSize / 2 - (w.Y + w.H / 2)) / (w.H / 2), -1f, 1f);
+        float edge = (MathF.Abs(rel) - 0.33f) / 0.67f;
+        if (edge <= 0) return;
+        float speed = MathF.Sqrt(_vx * _vx + _vy * _vy);
+        float angle = MathF.Atan2(_vy, MathF.Abs(_vx)) + MathF.Sign(rel) * edge * 30f * MathF.PI / 180f;
+        float max = 60f * MathF.PI / 180f;
+        angle = Math.Clamp(angle, -max, max);
+        _vx = MathF.Cos(angle) * speed * dirX;
+        _vy = MathF.Sin(angle) * speed;
     }
 
     private void Serve(bool toRight)
