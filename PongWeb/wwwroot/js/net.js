@@ -6,6 +6,16 @@ import { joinRoom, selfId, getRelaySockets } from "https://esm.sh/trystero@0.21"
 
 const APP_ID = "sepp-pong-v1";
 
+// Fixed relay list so every device meets on the same relays (Trystero's defaults include
+// relays that are often down or rate-limit). A few failing is fine as long as one works.
+const RELAYS = [
+    "wss://relay.primal.net",
+    "wss://nostr.mom",
+    "wss://offchain.pub",
+    "wss://nostr-pub.wellorder.net",
+    "wss://relay.damus.io",
+];
+
 let room, dotnet, me = { name: "", hosting: false, busy: false };
 const peers = new Map(); // peerId -> { name, hosting, busy }
 let opponent = null;
@@ -46,7 +56,7 @@ function announce(to) { sendHello?.({ name: me.name, hosting: me.hosting, busy: 
 export async function start(dotnetRef, name) {
     dotnet = dotnetRef;
     me.name = name;
-    room = joinRoom({ appId: APP_ID }, diag.room = await roomName());
+    room = joinRoom({ appId: APP_ID, relayUrls: RELAYS, relayRedundancy: RELAYS.length }, diag.room = await roomName());
     setInterval(pushDiag, 2000);
     pushDiag();
 
