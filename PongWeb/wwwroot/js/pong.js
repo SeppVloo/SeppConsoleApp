@@ -36,8 +36,9 @@ export function start(el, dotnetRef, gameMode, side, powerUpInfo) {
     last = { hit: -1, score: -1, power: -1, wall: -1 };
 
     canvas.onpointerdown = e => { canvas.setPointerCapture(e.pointerId); setTarget(toGameY(e.clientY)); e.preventDefault(); };
-    canvas.onpointermove = e => { if (e.buttons || e.pointerType === "touch") setTarget(toGameY(e.clientY)); e.preventDefault(); };
-    canvas.onpointerup = canvas.onpointercancel = () => setTarget(null);
+    canvas.onpointermove = e => { if (e.buttons || e.pointerType !== "pen") setTarget(toGameY(e.clientY)); e.preventDefault(); };
+    canvas.onpointerup = canvas.onpointercancel = e => { if (e.pointerType !== "mouse") setTarget(null); };
+    canvas.onpointerleave = e => { if (e.pointerType === "mouse") setTarget(null); };
 
     if (mode === "host") {
         link.onInput = (slot, y) => dotnet.invokeMethod("SetTarget", slot, y);
@@ -367,31 +368,74 @@ function nameTargets(text) {
 
 function droneShow(name, color, dt, now) {
     if (!drones || drones.name !== name) {
-        const targets = nameTargets(name);
+        const text = nameTargets(name);
+        const n = text.length;
+        const cup = trophyTargets(n);
         drones = {
             name, start: now,
-            list: targets.map((t, i) => ({
-                x: Math.random() * W, y: H + 20 + Math.random() * 80,
-                tx: t.x, ty: t.y, delay: i * 1.5,
+            list: text.map((t, i) => ({
+                x: W * (0.1 + 0.8 * Math.random()), y: H + 20 + Math.random() * 60,
+                tx: t.x, ty: t.y, cx: cup[i].x, cy: cup[i].y,
+                a: (i / n) * Math.PI * 2, r: 60 + (i % 5) * 22,
                 hue: [color, "#fde047", "#ffffff"][i % 3],
             })),
         };
     }
-    const t = now - drones.start;
+    const t = (now - drones.start) / 1000;
     const sp = {};
+    // Timeline (loops after the intro): rise 0-3s · swirl 3-6s · name 6-16s · trophy 16-21s · name again ...
+    const loopT = t < 21 ? t : 6 + ((t - 21) % 15);
+    const k = 1 - Math.pow(0.12, dt);
     for (const d of drones.list) {
-        if (t < d.delay) continue;
-        // Gentle hover after arriving; a wave runs through the letters.
-        const hover = Math.sin(now / 400 + d.tx / 60) * 2;
-        const k = 1 - Math.pow(0.02, dt);
-        d.x += (d.tx - d.x) * k;
-        d.y += (d.ty + hover - d.y) * k;
-        const twinkle = 0.6 + 0.4 * Math.sin(now / 150 + d.tx * 0.3 + d.ty * 0.2);
-        ctx.globalAlpha = twinkle;
-        drawSprite(sp[d.hue] ??= glowSprite(d.hue, 1.8, 4), d.x, d.y);
+        let gx, gy;
+        if (loopT < 3) {                                   // take-off: drift up slowly in a column
+            gx = d.x; gy = H * 0.9 - (loopT / 3) * H * 0.3 - (d.r - 60);
+        } else if (loopT < 6 || (t >= 21 && loopT < 6.01)) { // spinning rings in the sky
+            const a = d.a + loopT * 0.9 * (d.r % 44 ? 1 : -1);
+            gx = W / 2 + Math.cos(a) * d.r * 1.6; gy = H * 0.4 + Math.sin(a) * d.r * 0.8;
+        } else if (loopT < 16) {                            // the winner's name, drones arrive one by one
+            const arrive = (d.a / (Math.PI * 2)) * 3;       // spread arrivals over 3 seconds
+            if (loopT - 6 < arrive) { gx = d.x; gy = d.y; }
+            else { gx = d.tx; gy = d.ty + Math.sin(now / 500 + d.tx / 50) * 3; }
+        } else {                                            // trophy
+            gx = d.cx; gy = d.cy + Math.sin(now / 400 + d.cx / 30) * 2;
+        }
+        d.x += (gx - d.x) * k;
+        d.y += (gy - d.y) * k;
+
+        // Colour wave rolling through the formation while the name is up.
+        let hue = d.hue;
+        if (loopT >= 9 && loopT < 16) {
+            const wave = Math.sin(d.tx / 70 - now / 350);
+            hue = wave > 0.6 ? "#ffffff" : wave < -0.6 ? "#fde047" : color;
+        } else if (loopT >= 16) hue = "#fde047";
+        ctx.globalAlpha = 0.65 + 0.35 * Math.sin(now / 220 + d.a * 7);
+        drawSprite(sp[hue] ??= glowSprite(hue, 1.8, 4), d.x, d.y);
     }
     ctx.globalAlpha = 1;
-    if (Math.random() < 0.08) burst(Math.random() * W, 20 + Math.random() * 80, ["#22d3ee", "#f472b6", "#fde047"][Math.floor(Math.random() * 3)], 20, 160);
+    if (loopT > 7 && Math.random() < 0.03)
+        burst(W * (0.1 + 0.8 * Math.random()), 30 + Math.random() * 60, ["#22d3ee", "#f472b6", "#fde047"][Math.floor(Math.random() * 3)], 24, 140);
+}
+
+// Points outlining a trophy in the sky.
+function trophyTargets(n) {
+    const pts = [], cx = W / 2, top = 70;
+    const add = (x, y) => pts.push({ x, y });
+    for (let i = 0; i < n; i++) {
+        const u = i / n;
+        if (u < 0.45) {                     // cup bowl (filled half-ellipse)
+            const a = Math.PI * (u / 0.45), rr = Math.sqrt(Math.random());
+            add(cx + Math.cos(a) * 90 * rr * (Math.random() < 0.5 ? 1 : -1), top + Math.sin(a) * 110 * rr);
+        } else if (u < 0.6) {               // handles
+            const a = ((u - 0.45) / 0.15) * Math.PI * 2;
+            add(cx + (a < Math.PI ? -110 : 110) + Math.cos(a * 2) * 22, top + 40 + Math.sin(a * 2) * 30);
+        } else if (u < 0.75) {              // stem
+            add(cx + (Math.random() - 0.5) * 18, top + 110 + Math.random() * 50);
+        } else {                            // base
+            add(cx + (Math.random() - 0.5) * 140, top + 160 + Math.random() * 22);
+        }
+    }
+    return pts;
 }
 
 function teamColor(team) { return team === localSide % 2 ? C.me : C.them; }

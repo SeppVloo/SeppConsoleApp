@@ -10,6 +10,7 @@ public sealed class PongEngine
     private const float W = GameState.Width;
     private const float H = GameState.Height;
     private const float PaddleSpeed = 600f;
+    private const float HumanPaddleSpeed = 2400f;
     private const float StartSpeed = 340f;
     private const float MaxSpeed = 950f;
     private const float MaxBounceDeg = 55f;
@@ -360,7 +361,7 @@ public sealed class PongEngine
         if (_target[p] is float y)
         {
             if (_mods.Inverted[team]) y = H - y;
-            float speed = PaddleSpeed * (Ai[p] ? AiSpeed[p] : 1f) * (_stun[p] > 0 ? 0.6f : 1f);
+            float speed = (Ai[p] ? PaddleSpeed * AiSpeed[p] : HumanPaddleSpeed) * (_stun[p] > 0 ? 0.6f : 1f);
             float max = speed * dt;
             _py[p] += Math.Clamp(y - _py[p], -max, max);
         }
