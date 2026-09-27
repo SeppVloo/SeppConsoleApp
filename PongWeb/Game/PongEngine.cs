@@ -172,7 +172,7 @@ public sealed class PongEngine
             Winner = _winner, Serving = _serveTimer > 0,
             HitSeq = _hitSeq, ScoreSeq = _scoreSeq, PowerSeq = _powerSeq,
             PowerText = _powerText,
-            BumpSeq = BumpSeq, Paused = Paused,
+            Walls = _walls.ToArray(), WallSeq = _wallSeq, BumpSeq = BumpSeq, Paused = Paused,
         };
     }
 
