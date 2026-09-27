@@ -27,6 +27,9 @@ public sealed class PongEngine
     /// <summary>Which slots are played by the computer.</summary>
     public bool[] Ai { get; } = new bool[MaxSlots];
 
+    /// <summary>Paddle speed factor per computer slot (1 = as fast as a human).</summary>
+    public float[] AiSpeed { get; } = [0.7f, 0.7f, 0.7f, 0.7f];
+
     public string[] TeamNames { get; set; } = ["Links", "Rechts"];
 
     /// <summary>Indices into <see cref="PowerUpRegistry.All"/> that may spawn. Empty = no power-ups.</summary>
@@ -74,8 +77,8 @@ public sealed class PongEngine
     // Teammate collisions: knockback velocity that fades out, and a short moment of reduced control.
     private readonly float[] _kick = new float[MaxSlots];
     private readonly float[] _stun = new float[MaxSlots];
-    private const float BumpSpeed = 700f;
-    private const float StunTime = 0.35f;
+    private const float BumpSpeed = 350f;
+    private const float StunTime = 0.12f;
     public int BumpSeq { get; private set; }
 
     private int PaddleCount => TeamSize * 2;
@@ -169,7 +172,7 @@ public sealed class PongEngine
             BallSpeedFactor = _mods.BallSpeedFactor,
             LeftScore = _score[0], RightScore = _score[1], MaxScore = MaxScore,
             PowerUps = _pickups.ToArray(),
-            Winner = _winner, Serving = _serveTimer > 0,
+            Winner = _winner, WinnerName = _winner >= 0 ? TeamNames[_winner] : "", Serving = _serveTimer > 0,
             HitSeq = _hitSeq, ScoreSeq = _scoreSeq, PowerSeq = _powerSeq,
             PowerText = _powerText,
             Walls = _walls.ToArray(), WallSeq = _wallSeq, BumpSeq = BumpSeq, Paused = Paused,
@@ -196,7 +199,8 @@ public sealed class PongEngine
             float col = W * (0.18f + 0.06f * _rng.Next(3));
             x = picker == Side.Left ? col : W - col - WallWidth;
             y = (float)(40 + _rng.NextDouble() * (H - 80 - wh));
-            if (!_walls.Any(w => MathF.Abs(w.X - x) < WallWidth * 2 && y < w.Y + w.H && y + wh > w.Y)) break;
+            var cand = new WallInfo { X = x, Y = y, H = wh };
+            if (!_walls.Any(w => WallsOverlap(w, cand))) break;
         }
         _walls.Add(new WallInfo { Side = (int)picker, X = x, Y = y, H = wh, Hp = hp, MaxHp = hp });
     }
@@ -266,11 +270,51 @@ public sealed class PongEngine
         {
             var w = _walls[i];
             if (w.Spin == 0) continue;
+            float old = w.Angle;
             w.Angle += w.Spin * dt;
             w.Spin *= damp;
+
+            // Walls are solid: if this turn would overlap another wall, undo it and bounce back.
+            for (int j = 0; j < _walls.Count; j++)
+            {
+                if (j == i || !WallsOverlap(w, _walls[j])) continue;
+                w.Angle = old;
+                var o = _walls[j];
+                o.Spin = Math.Clamp(o.Spin - w.Spin * 0.5f, -MaxWallSpin, MaxWallSpin);
+                _walls[j] = o;
+                w.Spin = -w.Spin * 0.6f;
+                _wallSeq++;
+                break;
+            }
+
             if (MathF.Abs(w.Spin) < 0.02f) w.Spin = 0;
             _walls[i] = w;
         }
+    }
+
+    // Separating axis test for two rotated rectangles.
+    private static bool WallsOverlap(WallInfo a, WallInfo b)
+    {
+        Span<float> axes = stackalloc float[8];
+        axes[0] = MathF.Cos(a.Angle); axes[1] = MathF.Sin(a.Angle);
+        axes[2] = -axes[1]; axes[3] = axes[0];
+        axes[4] = MathF.Cos(b.Angle); axes[5] = MathF.Sin(b.Angle);
+        axes[6] = -axes[5]; axes[7] = axes[4];
+        float dx = (b.X + WallWidth / 2) - (a.X + WallWidth / 2);
+        float dy = (b.Y + b.H / 2) - (a.Y + a.H / 2);
+        for (int k = 0; k < 8; k += 2)
+        {
+            float ax = axes[k], ay = axes[k + 1];
+            float d = MathF.Abs(dx * ax + dy * ay);
+            if (d > Extent(a, ax, ay) + Extent(b, ax, ay)) return false;
+        }
+        return true;
+    }
+
+    private static float Extent(WallInfo w, float ax, float ay)
+    {
+        float nx = MathF.Cos(w.Angle), ny = MathF.Sin(w.Angle);
+        return WallWidth / 2 * MathF.Abs(nx * ax + ny * ay) + w.H / 2 * MathF.Abs(-ny * ax + nx * ay);
     }
 
     private void Serve(bool toRight)
@@ -316,7 +360,7 @@ public sealed class PongEngine
         if (_target[p] is float y)
         {
             if (_mods.Inverted[team]) y = H - y;
-            float speed = PaddleSpeed * (Ai[p] ? 0.7f : 1f) * (_stun[p] > 0 ? 0.3f : 1f);
+            float speed = PaddleSpeed * (Ai[p] ? AiSpeed[p] : 1f) * (_stun[p] > 0 ? 0.6f : 1f);
             float max = speed * dt;
             _py[p] += Math.Clamp(y - _py[p], -max, max);
         }

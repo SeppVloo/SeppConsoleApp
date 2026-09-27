@@ -75,6 +75,16 @@ else
 								{
 									var ai = (_aiMask & (1 << slot)) != 0;
 									<button class="btn seat @(ai ? "ai" : "")" @onclick="() => ToggleSeat(slot)">@(ai ? "🤖 Computer" : "👤 Speler")</button>
+									@if (ai)
+									{
+										<div class="seg speed">
+											@for (var lv = 0; lv < AiLevels.Length; lv++)
+											{
+												var l = lv;
+												<button class="btn @(_aiLevel[slot] == l ? "sel" : "")" title="@AiLevels[l].Name" @onclick="() => SetAiLevel(slot, l)">@AiLevels[l].Icon</button>
+											}
+										</div>
+									}
 								}
 							}
 						</div>
@@ -192,7 +202,7 @@ else
 			EnabledPowerUps = Enumerable.Range(0, PowerUpRegistry.All.Count).Where(i => !_disabled.Contains(i)).ToArray(),
 			TeamNames = [TeamLabel(0), TeamLabel(1)],
 		};
-		foreach (var s in AiSlots()) e.Ai[s] = true;
+		foreach (var s in AiSlots()) { e.Ai[s] = true; e.AiSpeed[s] = AiLevels[_aiLevel[s]].Speed; }
 		e.Reset();
 		return e;
 	}
@@ -229,6 +239,18 @@ else
 		await SaveSetup();
 	}
 
+	private static readonly (string Icon, string Name, float Speed)[] AiLevels =
+	[
+		("🐢", "Langzaam", 0.45f), ("🚶", "Normaal", 0.7f), ("🏃", "Snel", 0.9f), ("🚀", "Supersnel", 1.1f),
+	];
+	private int[] _aiLevel = [1, 1, 1, 1];
+
+	private async Task SetAiLevel(int slot, int level)
+	{
+		_aiLevel[slot] = level;
+		await SaveSetup();
+	}
+
 	private async Task ToggleSeat(int slot)
 	{
 		_aiMask ^= 1 << slot;
@@ -256,12 +278,15 @@ else
 	}
 
 	private async Task SaveSetup() =>
-		await JS.InvokeVoidAsync("localStorage.setItem", "pongSetup2", $"{_teamSize},{_aiMask},{_wallMin},{_wallMax},{_wallSizeMin},{_wallSizeMax}");
+		await JS.InvokeVoidAsync("localStorage.setItem", "pongSetup2", $"{_teamSize},{_aiMask},{_wallMin},{_wallMax},{_wallSizeMin},{_wallSizeMax},{string.Join('-', _aiLevel)}");
 
 	private async Task LoadSetup()
 	{
 		var v = await JS.InvokeAsync<string?>("localStorage.getItem", "pongSetup2");
-		var p = (v ?? "").Split(',').Select(x => int.TryParse(x, out var n) ? n : 0).ToArray();
+		var raw = (v ?? "").Split(',');
+		if (raw.Length == 7)
+			_aiLevel = raw[6].Split('-').Select(x => int.TryParse(x, out var n) ? Math.Clamp(n, 0, AiLevels.Length - 1) : 1).Concat(Enumerable.Repeat(1, 4)).Take(4).ToArray();
+		var p = raw.Take(6).Select(x => int.TryParse(x, out var n) ? n : 0).ToArray();
 		if (p.Length != 6) return;
 		_teamSize = Math.Clamp(p[0], 1, 2);
 		_aiMask = p[1] & 0b1110;

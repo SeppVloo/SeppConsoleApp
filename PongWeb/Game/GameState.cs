@@ -29,6 +29,7 @@ public sealed class GameState
     public int WallSeq { get; set; }
     public int BumpSeq { get; set; }
     public bool Paused { get; set; }
+    public string WinnerName { get; set; } = "";
 }
 
 public struct PaddleInfo

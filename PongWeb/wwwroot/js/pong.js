@@ -326,23 +326,72 @@ function draw(raw, dt) {
         ctx.fillText("tik op ▶ om verder te spelen", W / 2, H / 2 + 30);
     }
 
-    // Winner overlay
+    // Winner overlay + drone show
     if (s.winner >= 0) {
-        ctx.fillStyle = "rgba(5,8,20,0.7)";
+        ctx.fillStyle = "rgba(2,4,14,0.85)";
         ctx.fillRect(0, 0, W, H);
         const won = s.winner === localSide % 2;
-        glow(won ? C.me : C.them, 30);
+        droneShow(s.winnerName || (won ? "Jij" : "Winnaar"), won ? C.me : C.them, dt, now);
         ctx.fillStyle = "#fff";
-        ctx.font = "800 52px system-ui, sans-serif";
-        ctx.fillText(won ? "Jij wint! 🎉" : "Verloren", W / 2, H / 2 - 12);
-        noGlow();
-        ctx.font = "500 18px system-ui, sans-serif";
+        ctx.font = "800 30px system-ui, sans-serif";
+        ctx.fillText(won ? "Jij wint! 🎉" : "Verloren", W / 2, H - 70);
+        ctx.font = "500 16px system-ui, sans-serif";
         ctx.fillStyle = "rgba(255,255,255,0.7)";
-        ctx.fillText(`${s.leftScore} – ${s.rightScore}  ·  tik op ↻ voor revanche`, W / 2, H / 2 + 34);
-        if (won && Math.random() < 0.3) burst(Math.random() * W, -5, ["#22d3ee", "#f472b6", "#fde047"][Math.floor(Math.random() * 3)], 1, 120);
-    }
+        ctx.fillText(`${s.leftScore} – ${s.rightScore}  ·  tik op ↻ voor revanche`, W / 2, H - 38);
+    } else drones = null;
 
     ctx.restore();
+}
+
+// ---------- Drone show ----------
+let drones = null;
+
+// Sample the name's pixels into target points for the drones.
+function nameTargets(text) {
+    const c = document.createElement("canvas");
+    c.width = W; c.height = 260;
+    const g = c.getContext("2d");
+    let size = 150;
+    g.font = `900 ${size}px system-ui, sans-serif`;
+    while (g.measureText(text).width > W - 60 && size > 30) { size -= 6; g.font = `900 ${size}px system-ui, sans-serif`; }
+    g.textAlign = "center"; g.textBaseline = "middle"; g.fillStyle = "#fff";
+    g.fillText(text, W / 2, 130);
+    const data = g.getImageData(0, 0, W, 260).data;
+    const pts = [], step = size > 90 ? 7 : 5;
+    for (let y = 0; y < 260; y += step)
+        for (let x = 0; x < W; x += step)
+            if (data[(y * W + x) * 4 + 3] > 128) pts.push({ x, y: y + 40 });
+    for (let i = pts.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pts[i], pts[j]] = [pts[j], pts[i]]; }
+    return pts.slice(0, 600);
+}
+
+function droneShow(name, color, dt, now) {
+    if (!drones || drones.name !== name) {
+        const targets = nameTargets(name);
+        drones = {
+            name, start: now,
+            list: targets.map((t, i) => ({
+                x: Math.random() * W, y: H + 20 + Math.random() * 80,
+                tx: t.x, ty: t.y, delay: i * 1.5,
+                hue: [color, "#fde047", "#ffffff"][i % 3],
+            })),
+        };
+    }
+    const t = now - drones.start;
+    const sp = {};
+    for (const d of drones.list) {
+        if (t < d.delay) continue;
+        // Gentle hover after arriving; a wave runs through the letters.
+        const hover = Math.sin(now / 400 + d.tx / 60) * 2;
+        const k = 1 - Math.pow(0.02, dt);
+        d.x += (d.tx - d.x) * k;
+        d.y += (d.ty + hover - d.y) * k;
+        const twinkle = 0.6 + 0.4 * Math.sin(now / 150 + d.tx * 0.3 + d.ty * 0.2);
+        ctx.globalAlpha = twinkle;
+        drawSprite(sp[d.hue] ??= glowSprite(d.hue, 1.8, 4), d.x, d.y);
+    }
+    ctx.globalAlpha = 1;
+    if (Math.random() < 0.08) burst(Math.random() * W, 20 + Math.random() * 80, ["#22d3ee", "#f472b6", "#fde047"][Math.floor(Math.random() * 3)], 20, 160);
 }
 
 function teamColor(team) { return team === localSide % 2 ? C.me : C.them; }
