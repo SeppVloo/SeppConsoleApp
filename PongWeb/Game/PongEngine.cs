@@ -66,6 +66,13 @@ public sealed class PongEngine
 
     public PongEngine() => Reset();
 
+    // Teammate collisions: knockback velocity that fades out, and a short moment of reduced control.
+    private readonly float[] _kick = new float[MaxSlots];
+    private readonly float[] _stun = new float[MaxSlots];
+    private const float BumpSpeed = 700f;
+    private const float StunTime = 0.35f;
+    public int BumpSeq { get; private set; }
+
     private int PaddleCount => TeamSize * 2;
     private float BasePaddleH => TeamSize == 1 ? 90f : 70f;
     private float LaneTop(int p) => TeamSize == 1 ? 0 : p / 2 * (H / 2);
@@ -81,15 +88,13 @@ public sealed class PongEngine
         _pickups.Clear();
         _walls.Clear();
         _spawnTimer = SpawnInterval;
-        for (int p = 0; p < MaxSlots; p++) _py[p] = (LaneTop(p) + LaneBottom(p)) / 2;
+        for (int p = 0; p < MaxSlots; p++) { _py[p] = (LaneTop(p) + LaneBottom(p)) / 2; _kick[p] = _stun[p] = 0; }
         Serve(toRight: _rng.Next(2) == 0);
     }
 
     public void SetTarget(int slot, float? y)
     {
         if (slot < 0 || slot >= MaxSlots) return;
-        // In 2v2 the whole screen height maps onto the player's own lane.
-        if (y is float v && TeamSize > 1) y = LaneTop(slot) + v / 2;
         _target[slot] = y;
     }
 
@@ -112,6 +117,7 @@ public sealed class PongEngine
             if (Ai[p]) _target[p] = AiTarget(p);
             UpdatePaddle(p, dt);
         }
+        if (TeamSize > 1) { CollideTeammates(0, 2); CollideTeammates(1, 3); }
 
         if (_serveTimer > 0)
         {
@@ -160,7 +166,7 @@ public sealed class PongEngine
             Winner = _winner, Serving = _serveTimer > 0,
             HitSeq = _hitSeq, ScoreSeq = _scoreSeq, PowerSeq = _powerSeq,
             PowerText = _powerText,
-            Walls = _walls.ToArray(), WallSeq = _wallSeq,
+            Walls = _walls.ToArray(), WallSeq = _wallSeq, BumpSeq = BumpSeq,
         };
     }
 
@@ -261,23 +267,65 @@ public sealed class PongEngine
     private void UpdatePaddle(int p, float dt)
     {
         int team = p % 2;
-        float top = LaneTop(p), bottom = LaneBottom(p);
-        float h = Math.Clamp(BasePaddleH * _mods.PaddleScale[team], 30f, (bottom - top) * 0.9f);
+        float h = Math.Clamp(BasePaddleH * _mods.PaddleScale[team], 30f, H * (TeamSize == 1 ? 0.9f : 0.45f));
         _ph[p] = h;
+        _stun[p] = MathF.Max(0, _stun[p] - dt);
         if (_target[p] is float y)
         {
-            if (_mods.Inverted[team]) y = top + bottom - y;
-            float speed = PaddleSpeed * (Ai[p] ? 0.7f : 1f);
+            if (_mods.Inverted[team]) y = H - y;
+            float speed = PaddleSpeed * (Ai[p] ? 0.7f : 1f) * (_stun[p] > 0 ? 0.3f : 1f);
             float max = speed * dt;
             _py[p] += Math.Clamp(y - _py[p], -max, max);
         }
-        _py[p] = Math.Clamp(_py[p], top + h / 2, bottom - h / 2);
+        _py[p] += _kick[p] * dt;
+        _kick[p] *= MathF.Pow(0.004f, dt);
+        float lo = h / 2, hi = H - h / 2;
+        if (_py[p] < lo) { _py[p] = lo; _kick[p] = MathF.Abs(_kick[p]) * 0.5f; }
+        else if (_py[p] > hi) { _py[p] = hi; _kick[p] = -MathF.Abs(_kick[p]) * 0.5f; }
+    }
+
+    // Teammates are solid: overlapping paddles are pushed apart and both get knocked back.
+    private void CollideTeammates(int a, int b)
+    {
+        float minDist = (_ph[a] + _ph[b]) / 2;
+        float d = _py[b] - _py[a];
+        if (MathF.Abs(d) >= minDist) return;
+        float dir = d >= 0 ? 1 : -1;
+        float push = (minDist - MathF.Abs(d)) / 2;
+        _py[a] -= push * dir;
+        _py[b] += push * dir;
+        for (int k = 0; k < 2; k++)
+        {
+            int p = k == 0 ? a : b;
+            float lo = _ph[p] / 2, hi = H - _ph[p] / 2;
+            _py[p] = Math.Clamp(_py[p], lo, hi);
+        }
+        // Still overlapping after clamping at an edge: move the other one fully out.
+        if (MathF.Abs(_py[b] - _py[a]) < minDist)
+        {
+            if (_py[a] <= _ph[a] / 2 + 0.01f || _py[a] >= H - _ph[a] / 2 - 0.01f) _py[b] = _py[a] + minDist * dir;
+            else _py[a] = _py[b] - minDist * dir;
+        }
+
+        bool fresh = _stun[a] <= 0 && _stun[b] <= 0;
+        _kick[a] = -dir * BumpSpeed;
+        _kick[b] = dir * BumpSpeed;
+        _stun[a] = _stun[b] = StunTime;
+        if (fresh) BumpSeq++;
     }
 
     private float AiTarget(int p)
     {
         bool incoming = p % 2 == 0 ? _vx < 0 : _vx > 0;
-        return incoming ? _by + GameState.BallSize / 2 : (LaneTop(p) + LaneBottom(p)) / 2;
+        float home = (LaneTop(p) + LaneBottom(p)) / 2;
+        if (!incoming) return home;
+        float ball = _by + GameState.BallSize / 2;
+        if (TeamSize > 1)
+        {
+            int mate = (p + 2) % 4;
+            if (MathF.Abs(_py[mate] - ball) < MathF.Abs(_py[p] - ball)) return home;
+        }
+        return ball;
     }
 
     private void UpdatePowerUps(float dt)

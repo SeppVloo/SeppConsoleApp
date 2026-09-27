@@ -27,6 +27,7 @@ public sealed class GameState
     public string PowerText { get; set; } = "";
     public WallInfo[] Walls { get; set; } = [];
     public int WallSeq { get; set; }
+    public int BumpSeq { get; set; }
 }
 
 public struct PaddleInfo

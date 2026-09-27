@@ -233,6 +233,10 @@ function draw(raw, dt) {
         ctx.fillStyle = "rgba(11,16,38,0.8)";
         for (let k = 1; k < w.maxHp; k++) ctx.fillRect(w.x, w.y + w.h * k / w.maxHp - 1, 12, 2);
     }
+    if (s.bumpSeq !== last.bump) {
+        if (last.bump !== undefined) { play("hit"); shake = Math.max(shake, 6); navigator.vibrate?.(30); }
+        last.bump = s.bumpSeq;
+    }
     if (s.wallSeq !== last.wall) {
         if (last.wall >= 0) burst(bx, by, "#38bdf8", 12, 200);
         last.wall = s.wallSeq;
