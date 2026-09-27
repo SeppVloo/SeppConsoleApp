@@ -35,7 +35,19 @@ public abstract class PowerUp
     public abstract string Symbol { get; }
     public virtual float DurationSec => 6f;
 
-    public abstract void Modify(Modifiers mods, Side picker);
+    public virtual void Modify(Modifiers mods, Side picker) { }
+
+    /// <summary>One-shot action when picked up (e.g. spawn an object).</summary>
+    public virtual void Activate(PongEngine engine, Side picker) { }
+}
+
+public sealed class WallPowerUp : PowerUp
+{
+    public override string Name => "Muurtje";
+    public override string Color => "#38bdf8";
+    public override string Symbol => "▮";
+    public override float DurationSec => 0f;
+    public override void Activate(PongEngine engine, Side picker) => engine.SpawnWall(picker);
 }
 
 public sealed class EnlargeSelfPowerUp : PowerUp
@@ -80,5 +92,6 @@ public static class PowerUpRegistry
         new ShrinkOpponentPowerUp(),
         new BallSpeedBoostPowerUp(),
         new InvertOpponentControlsPowerUp(),
+        new WallPowerUp(),
     ];
 }

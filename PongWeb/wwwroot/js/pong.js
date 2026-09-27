@@ -33,7 +33,7 @@ export function start(el, dotnetRef, gameMode, side, powerUpInfo) {
     trail.length = 0;
     dotnet = dotnetRef; mode = gameMode; localSide = side; powerUps = powerUpInfo;
     latest = null; frame = 0; lastTime = performance.now();
-    last = { hit: -1, score: -1, power: -1 };
+    last = { hit: -1, score: -1, power: -1, wall: -1 };
 
     canvas.onpointerdown = e => { canvas.setPointerCapture(e.pointerId); setTarget(toGameY(e.clientY)); e.preventDefault(); };
     canvas.onpointermove = e => { if (e.buttons || e.pointerType === "touch") setTarget(toGameY(e.clientY)); e.preventDefault(); };
@@ -221,6 +221,23 @@ function draw(raw, dt) {
         ctx.fillStyle = `rgba(255,255,255,${0.18 + p * 0.6})`;
         ctx.fillText(v, x, 60);
     });
+
+    // Wall
+    if (s.hasWall) {
+        const hp = s.wallHp / s.wallMaxHp;
+        ctx.globalAlpha = 0.2; ctx.fillStyle = "#38bdf8";
+        roundRect(s.wallX - 6, s.wallY - 6, 24, s.wallH + 12, 10); ctx.fill();
+        ctx.globalAlpha = 0.35 + hp * 0.65;
+        ctx.fillStyle = "#38bdf8";
+        roundRect(s.wallX, s.wallY, 12, s.wallH, 5); ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = "rgba(11,16,38,0.8)";
+        for (let k = 1; k < s.wallMaxHp; k++) ctx.fillRect(s.wallX, s.wallY + s.wallH * k / s.wallMaxHp - 1, 12, 2);
+    }
+    if (s.wallSeq !== last.wall) {
+        if (last.wall >= 0) burst(s.wallX + 6, by, "#38bdf8", 12, 200);
+        last.wall = s.wallSeq;
+    }
 
     // Paddles
     paddle(20, s.leftY, s.leftH, 0, s);

@@ -83,13 +83,17 @@ else
 		}
 
 		<div class="card">
-			<h3>Power-ups</h3>
+			<h3>Power-ups <span class="muted small" style="text-transform:none;letter-spacing:0;font-weight:400">· tik om aan/uit te zetten</span></h3>
 			<ul class="powerups">
-				@foreach (var pu in PowerUpRegistry.All)
+				@for (var i = 0; i < PowerUpRegistry.All.Count; i++)
 				{
-					<li><span class="dot" style="background:@pu.Color;color:@pu.Color"><span style="color:#0b1026">@pu.Symbol</span></span> @pu.Name</li>
+					var idx = i;
+					var pu = PowerUpRegistry.All[i];
+					var on = !_disabled.Contains(idx);
+					<li class="toggle @(on ? "on" : "off")" @onclick="() => TogglePowerUp(idx)"><span class="dot" style="background:@pu.Color;color:@pu.Color"><span style="color:#0b1026">@pu.Symbol</span></span> <span class="pu-name">@pu.Name</span><span class="switch"></span></li>
 				}
 			</ul>
+			<p class="muted small" style="margin:.6rem 0 0">Bij online spelen gelden de instellingen van wie het spel start.</p>
 		</div>
 	</div>
 }
@@ -118,6 +122,18 @@ else
 	private string? _status;
 	private bool _hosting, _netReady;
 	private List<Peer> _peers = [];
+	private HashSet<int> _disabled = [];
+
+	private async Task TogglePowerUp(int i)
+	{
+		if (!_disabled.Remove(i)) _disabled.Add(i);
+		await JS.InvokeVoidAsync("localStorage.setItem", "pongDisabledPowerUps", string.Join(",", _disabled));
+	}
+
+	private PongEngine NewEngine() => new()
+	{
+		EnabledPowerUps = Enumerable.Range(0, PowerUpRegistry.All.Count).Where(i => !_disabled.Contains(i)).ToArray()
+	};
 
 	protected override async Task OnAfterRenderAsync(bool firstRender)
 	{
@@ -125,6 +141,9 @@ else
 		{
 			_self = DotNetObjectReference.Create(this);
 			_name = await JS.InvokeAsync<string?>("localStorage.getItem", "pongName") ?? $"Speler {Random.Shared.Next(100, 999)}";
+			var dis = await JS.InvokeAsync<string?>("localStorage.getItem", "pongDisabledPowerUps");
+			if (!string.IsNullOrEmpty(dis))
+				_disabled = dis.Split(',').Select(x => int.TryParse(x, out var n) ? n : -1).Where(n => n >= 0).ToHashSet();
 			_pong = await JS.InvokeAsync<IJSObjectReference>("import", "./js/pong.js");
 			_net = await JS.InvokeAsync<IJSObjectReference>("import", "./js/net.js");
 			StateHasChanged();
@@ -159,7 +178,8 @@ else
 
 	private void Practice()
 	{
-		_engine = new PongEngine { AiRight = true };
+		_engine = NewEngine();
+		_engine.AiRight = true;
 		BeginGame("practice", 0, "Computer");
 	}
 
@@ -225,7 +245,7 @@ else
 	[JSInvokable]
 	public void OnGameStart(int side, string opponent)
 	{
-		_engine = side == 0 ? new PongEngine() : null;
+		_engine = side == 0 ? NewEngine() : null;
 		BeginGame(side == 0 ? "host" : "client", side, opponent);
 		StateHasChanged();
 	}

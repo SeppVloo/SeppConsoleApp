@@ -17,6 +17,17 @@ public sealed class PongEngine
     public int MaxScore { get; set; } = 7;
     public bool AiRight { get; set; }
 
+    /// <summary>Indices into <see cref="PowerUpRegistry.All"/> that may spawn. Empty = no power-ups.</summary>
+    public IReadOnlyList<int> EnabledPowerUps { get; set; } = Enumerable.Range(0, PowerUpRegistry.All.Count).ToArray();
+
+    public const float WallWidth = 12f;
+    public const float WallHeight = 110f;
+    public const int WallHits = 3;
+    private bool _hasWall;
+    private float _wx, _wy;
+    private int _wallHp;
+    private int _wallSeq;
+
     private readonly Random _rng = new();
     private readonly Modifiers _mods = new();
     private readonly List<(PowerUp Def, Side Picker, float Remaining)> _effects = new();
@@ -47,6 +58,7 @@ public sealed class PongEngine
         _mods.Reset();
         _winner = -1;
         _hasPowerUp = false;
+        _hasWall = false;
         _spawnTimer = SpawnInterval;
         _py[0] = _py[1] = H / 2;
         Serve(toRight: _rng.Next(2) == 0);
@@ -85,6 +97,8 @@ public sealed class PongEngine
         if (_by < 0) { _by = 0; _vy = Math.Abs(_vy); }
         else if (_by + GameState.BallSize > H) { _by = H - GameState.BallSize; _vy = -Math.Abs(_vy); }
 
+        if (_hasWall) HitWall();
+
         float lx = GameState.PaddleMargin;
         if (_vx < 0 && _bx <= lx + GameState.PaddleWidth && _bx + GameState.BallSize >= lx && OverlapsPaddle(0))
             Bounce(Side.Left);
@@ -111,7 +125,43 @@ public sealed class PongEngine
         Winner = _winner, Serving = _serveTimer > 0,
         HitSeq = _hitSeq, ScoreSeq = _scoreSeq, PowerSeq = _powerSeq,
         PowerText = _powerText,
+        HasWall = _hasWall, WallX = _wx, WallY = _wy, WallH = WallHeight,
+        WallHp = _wallHp, WallMaxHp = WallHits, WallSeq = _wallSeq,
     };
+
+    /// <summary>Places a wall in front of the picker's goal. Picking another one refreshes it.</summary>
+    public void SpawnWall(Side picker)
+    {
+        _wx = picker == Side.Left ? W * 0.22f : W * 0.78f - WallWidth;
+        _wy = (float)(40 + _rng.NextDouble() * (H - 80 - WallHeight));
+        _wallHp = WallHits;
+        _hasWall = true;
+    }
+
+    // Every contact always costs one hit point; at 0 the wall is gone. Ball is pushed out so it can't hit twice.
+    private void HitWall()
+    {
+        const float b = GameState.BallSize;
+        if (_bx + b <= _wx || _bx >= _wx + WallWidth || _by + b <= _wy || _by >= _wy + WallHeight) return;
+
+        float penLeft = _bx + b - _wx, penRight = _wx + WallWidth - _bx;
+        float penTop = _by + b - _wy, penBottom = _wy + WallHeight - _by;
+        float minX = MathF.Min(penLeft, penRight), minY = MathF.Min(penTop, penBottom);
+        if (minX <= minY)
+        {
+            if (penLeft < penRight) { _bx = _wx - b; _vx = -Math.Abs(_vx); }
+            else { _bx = _wx + WallWidth; _vx = Math.Abs(_vx); }
+        }
+        else
+        {
+            if (penTop < penBottom) { _by = _wy - b; _vy = -Math.Abs(_vy); }
+            else { _by = _wy + WallHeight; _vy = Math.Abs(_vy); }
+        }
+
+        _hitSeq++;
+        _wallSeq++;
+        if (--_wallHp <= 0) _hasWall = false;
+    }
 
     private void Serve(bool toRight)
     {
@@ -169,9 +219,9 @@ public sealed class PongEngine
         if (!_hasPowerUp)
         {
             _spawnTimer -= dt;
-            if (_spawnTimer <= 0)
+            if (_spawnTimer <= 0 && EnabledPowerUps.Count > 0)
             {
-                _puType = _rng.Next(PowerUpRegistry.All.Count);
+                _puType = EnabledPowerUps[_rng.Next(EnabledPowerUps.Count)];
                 _pux = (float)(W * 0.3 + _rng.NextDouble() * (W * 0.4 - GameState.PowerUpSize));
                 _puy = (float)(40 + _rng.NextDouble() * (H - 80 - GameState.PowerUpSize));
                 _hasPowerUp = true;
@@ -184,7 +234,8 @@ public sealed class PongEngine
         if (!hit) return;
 
         var def = PowerUpRegistry.All[_puType];
-        _effects.Add((def, _lastHit, def.DurationSec));
+        if (def.DurationSec > 0) _effects.Add((def, _lastHit, def.DurationSec));
+        def.Activate(this, _lastHit);
         _hasPowerUp = false;
         _spawnTimer = SpawnInterval;
         _powerSeq++;
@@ -197,6 +248,7 @@ public sealed class PongEngine
         _scoreSeq++;
         _effects.Clear();
         _hasPowerUp = false;
+        _hasWall = false;
         _spawnTimer = SpawnInterval;
 
         if (_score[(int)scorer] >= MaxScore)

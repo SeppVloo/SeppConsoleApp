@@ -32,4 +32,11 @@ public sealed class GameState
     public int ScoreSeq { get; set; }
     public int PowerSeq { get; set; }
     public string PowerText { get; set; } = "";
+    public bool HasWall { get; set; }
+    public float WallX { get; set; }
+    public float WallY { get; set; }
+    public float WallH { get; set; }
+    public int WallHp { get; set; }
+    public int WallMaxHp { get; set; }
+    public int WallSeq { get; set; }
 }
