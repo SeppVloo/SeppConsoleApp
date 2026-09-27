@@ -1,40 +1,47 @@
 // Serverless matchmaking + peer-to-peer transport.
-// Players on the same Wi-Fi share one public IP, so they join the same Trystero room automatically.
+// Everyone joins one shared lobby; players with the same public IP are marked as "on your Wi-Fi".
+// (iOS often hides the real IP, so the IP is only a hint, not a separate room.)
 // Trystero only uses free public signalling relays to set up a direct WebRTC connection;
 // game data then flows directly between the devices.
-import { joinRoom, selfId } from "https://esm.sh/trystero@0.21";
+import { joinRoom, selfId } from "https://esm.sh/trystero@0.21.8";
 
 const APP_ID = "sepp-pong-v1";
+const LOBBY = "lobby";
 
-let room, dotnet, me = { name: "", hosting: false, busy: false };
+let room, dotnet, me = { name: "", hosting: false, busy: false, net: "" };
 const peers = new Map(); // peerId -> { name, hosting, busy }
 let opponent = null;
 let sendHello, sendJoin, sendReply, sendState, sendInput, sendCmd;
 let onHello, onJoin, onReply, onStateMsg, onInputMsg, onCmdMsg;
 let onState = null, onInput = null, onCmd = null;
 
-async function roomName() {
+async function networkHash() {
     try {
         const r = await fetch("https://api.ipify.org?format=json", { cache: "no-store" });
         const { ip } = await r.json();
         const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(ip));
-        return "lan-" + [...new Uint8Array(hash)].slice(0, 8).map(b => b.toString(16).padStart(2, "0")).join("");
+        return [...new Uint8Array(hash)].slice(0, 8).map(b => b.toString(16).padStart(2, "0")).join("");
     } catch {
-        return "lan-fallback";
+        return "";
     }
 }
 
 function pushPeers() {
-    const list = [...peers.entries()].map(([id, p]) => ({ id, name: p.name, hosting: p.hosting && !p.busy }));
+    const list = [...peers.entries()].map(([id, p]) => ({
+        id, name: p.name, hosting: p.hosting && !p.busy,
+        sameNetwork: !!me.net && p.net === me.net,
+    }));
     dotnet?.invokeMethodAsync("OnPeers", list);
 }
 
-function announce(to) { sendHello?.({ name: me.name, hosting: me.hosting, busy: me.busy }, to); }
+function announce(to) { sendHello?.({ name: me.name, hosting: me.hosting, busy: me.busy, net: me.net }, to); }
 
 export async function start(dotnetRef, name) {
     dotnet = dotnetRef;
     me.name = name;
-    room = joinRoom({ appId: APP_ID }, await roomName());
+    me.net = await networkHash();
+    room = joinRoom({ appId: APP_ID }, LOBBY);
+    setInterval(() => announce(), 3000);
 
     [sendHello, onHello] = room.makeAction("hello");
     [sendJoin, onJoin] = room.makeAction("join");

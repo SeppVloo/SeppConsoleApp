@@ -38,7 +38,7 @@ else
 			<button class="btn primary wide" @onclick="Host">Nieuw spel starten</button>
 			<button class="btn wide" @onclick="Practice">Oefenen tegen computer</button>
 
-			<h3>Spellen op dit wifi-netwerk</h3>
+			<h3>Open spellen</h3>
 			@if (!_netReady)
 			{
 				<p class="muted">Verbinden...</p>
@@ -47,13 +47,17 @@ else
 			{
 				<p class="muted">Nog niemand gevonden. Laat iemand anders "Nieuw spel starten" kiezen.</p>
 			}
-			@foreach (var peer in _peers.Where(p => p.Hosting))
+			@foreach (var peer in _peers.Where(p => p.Hosting).OrderByDescending(p => p.SameNetwork).ThenBy(p => p.Name))
 			{
-				<button class="btn success wide" @onclick="() => Join(peer.Id)">Meedoen met @peer.Name</button>
+				<button class="btn success wide" @onclick="() => Join(peer.Id)">Meedoen met @peer.Name@(peer.SameNetwork ? " 📶" : "")</button>
 			}
 			@if (_peers.Any(p => !p.Hosting))
 			{
 				<p class="muted small">Ook online: @string.Join(", ", _peers.Where(p => !p.Hosting).Select(p => p.Name))</p>
+			}
+			@if (_netReady)
+			{
+				<p class="muted small">📶 = op jouw wifi · @_peers.Count andere speler(s) online</p>
 			}
 		}
 
@@ -68,7 +72,7 @@ else
 }
 
 @code {
-	public record Peer(string Id, string Name, bool Hosting);
+	public record Peer(string Id, string Name, bool Hosting, bool SameNetwork);
 
 	private ElementReference _canvas;
 	private DotNetObjectReference<Home>? _self;
