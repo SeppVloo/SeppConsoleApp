@@ -333,8 +333,8 @@ function paddle(x, cy, h, i, s) {
     ctx.globalAlpha = 0.18; ctx.fillStyle = color;
     roundRect(x - 6, cy - h / 2 - 6, 24, h + 12, 12); ctx.fill();
     ctx.globalAlpha = 1;
-    const grad
-    grad.addColorStop(0, color); grad.addColorStop(1, "#ffffff");
+    const grad = ctx.createLinearGradient(x, 0, x + 12, 0);
+    grad.addColorStop
     ctx.fillStyle = grad;
     roundRect(x, cy - h / 2, 12, h, 6);
     ctx.fill();
