@@ -19,14 +19,14 @@
 			</span>
 		</div>
 		<canvas @ref="_canvas" width="800" height="450" class="pong-canvas"></canvas>
-		<div class="hint">Sleep met je vinger over het veld om je batje te bewegen</div>
+		<div class="hint">Sleep met je vinger of beweeg je muis over het veld · beweeg tijdens het raken voor effect</div>
 	</div>
 }
 else
 {
 	<div class="lobby">
 		<h1 class="logo">PONG</h1>
-		<p class="tagline">Speel samen op hetzelfde wifi-netwerk</p>
+		<p class="tagline">Speel samen via wifi of internet</p>
 
 		<div class="card">
 			<label>JOUW NAAM</label>
@@ -37,10 +37,10 @@ else
 		<div class="card">
 			<label>WAAR SPEEL JE?</label>
 			<div class="seg">
-				<button class="btn @(!_online ? "sel" : "")" @onclick="() => SetOnline(false)">📶 Dit wifi-netwerk</button>
+				<button class="btn @(!_online ? "sel" : "")" @onclick="() => SetOnline(false)">📶 Dit wifinetwerk</button>
 				<button class="btn @(_online ? "sel" : "")" @onclick="() => SetOnline(true)">🌍 Internet</button>
 			</div>
-			<p class="muted small" style="margin:.5rem 0 0">@(_online ? "Je ziet iedereen die nu online is en alle gestarte spellen, waar ook ter wereld." : "Je ziet automatisch iedereen op hetzelfde wifi-netwerk.")</p>
+			<p class="muted small" style="margin:.5rem 0 0">@(_online ? "Je ziet iedereen die nu online is en alle gestarte spellen, waar ook ter wereld." : "Je ziet automatisch iedereen op hetzelfde wifinetwerk.")</p>
 		</div>
 
 		@if (_status is not null)
@@ -234,7 +234,7 @@ else
 		var teams = string.Join(" vs ", Enumerable.Range(0, 2).Select(t =>
 			string.Join(" + ", Enumerable.Range(0, _teamSize * 2).Where(s => s % 2 == t).Select(Who))));
 		var r = RemoteSlots().Count;
-		return teams + (r == 0 ? "" : $" · wacht op {r} andere speler{(r > 1 ? "s" : "")} op dit wifi-netwerk");
+		return teams + (r == 0 ? "" : $" · wacht op {r} andere speler{(r > 1 ? "s" : "")} {(_online ? "online" : "op dit wifinetwerk")}");
 	}
 
 	private string TeamLabel(int team)

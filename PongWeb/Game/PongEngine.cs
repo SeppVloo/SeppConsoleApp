@@ -61,6 +61,9 @@ public sealed class PongEngine
     private readonly List<(PowerUp Def, Side Picker, float Remaining)> _effects = new();
 
     private float _bx, _by, _vx, _vy;
+    private float _spin;                                  // curve of the ball (units/s² on vy)
+    private const float MaxSpin = 900f;
+    private readonly float[] _pv = new float[MaxSlots];   // smoothed paddle velocity
     private readonly float[] _py = new float[MaxSlots];
     private readonly float[] _ph = new float[MaxSlots];
     private readonly float?[] _target = new float?[MaxSlots];
@@ -135,6 +138,8 @@ public sealed class PongEngine
         }
 
         float f = _mods.BallSpeedFactor;
+        _vy += _spin * dt;
+        _spin *= MathF.Pow(0.25f, dt);
         _prevBx = _bx; _prevBy = _by;
         _bx += _vx * f * dt;
         _by += _vy * f * dt;
@@ -331,6 +336,7 @@ public sealed class PongEngine
         _vx = MathF.Cos(angle) * StartSpeed * dir;
         _vy = MathF.Sin(angle) * StartSpeed;
         _serveTimer = ServeDelay;
+        _spin = 0;
         _lastHit = toRight ? Side.Left : Side.Right;
     }
 
@@ -349,6 +355,10 @@ public sealed class PongEngine
         float dir = side == Side.Left ? 1 : -1;
         _vx = MathF.Cos(angle) * speed * dir;
         _vy = MathF.Sin(angle) * speed;
+        // Effect: a moving paddle drags the ball along and gives it spin that curves its path.
+        float pv = Math.Clamp(_pv[p], -1500f, 1500f);
+        _vy += pv * 0.15f;
+        _spin = pv / 1500f * MaxSpin;
         _bx = side == Side.Left
             ? GameState.PaddleMargin + GameState.PaddleWidth
             : W - GameState.PaddleMargin - GameState.PaddleWidth - GameState.BallSize;
@@ -362,6 +372,7 @@ public sealed class PongEngine
         float h = Math.Clamp(BasePaddleH * _mods.PaddleScale[team], 30f, H * (TeamSize == 1 ? 0.9f : 0.45f));
         _ph[p] = h;
         _stun[p] = MathF.Max(0, _stun[p] - dt);
+        float before = _py[p];
         if (_target[p] is float y)
         {
             if (_mods.Inverted[team]) y = H - y;
@@ -374,6 +385,7 @@ public sealed class PongEngine
         float lo = h / 2, hi = H - h / 2;
         if (_py[p] < lo) { _py[p] = lo; _kick[p] = MathF.Abs(_kick[p]) * 0.5f; }
         else if (_py[p] > hi) { _py[p] = hi; _kick[p] = -MathF.Abs(_kick[p]) * 0.5f; }
+        if (dt > 0) _pv[p] += ((_py[p] - before) / dt - _pv[p]) * MathF.Min(1f, dt * 20f);
     }
 
     // Teammates are solid: overlapping paddles are pushed apart and both get knocked back.
