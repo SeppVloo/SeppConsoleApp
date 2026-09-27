@@ -31,6 +31,16 @@ else
 		<div class="card">
 			<label>JOUW NAAM</label>
 			<input class="input" value="@_name" @onchange="NameChanged" maxlength="20" />
+			<p class="muted small" style="margin:.5rem 0 0">🏅 Jouw niveau: <b>@SkillText</b> · computer op 🎯 past zich hierop aan</p>
+		</div>
+
+		<div class="card">
+			<label>WAAR SPEEL JE?</label>
+			<div class="seg">
+				<button class="btn @(!_online ? "sel" : "")" @onclick="() => SetOnline(false)">📶 Dit wifi-netwerk</button>
+				<button class="btn @(_online ? "sel" : "")" @onclick="() => SetOnline(true)">🌍 Internet</button>
+			</div>
+			<p class="muted small" style="margin:.5rem 0 0">@(_online ? "Je ziet iedereen die nu online is en alle gestarte spellen, waar ook ter wereld." : "Je ziet automatisch iedereen op hetzelfde wifi-netwerk.")</p>
 		</div>
 
 		@if (_status is not null)
@@ -96,7 +106,7 @@ else
 			</div>
 
 			<div class="card">
-				<h3>@if (_netReady) { <span class="live-dot"></span> } Spellen in de buurt</h3>
+				<h3>@if (_netReady) { <span class="live-dot"></span> } <span>@(_online ? "Online spelers & spellen" : "Spellen in de buurt")</span></h3>
 				@if (!_netReady)
 				{
 					<p class="empty">Verbinden...</p>
@@ -202,7 +212,7 @@ else
 			EnabledPowerUps = Enumerable.Range(0, PowerUpRegistry.All.Count).Where(i => !_disabled.Contains(i)).ToArray(),
 			TeamNames = [TeamLabel(0), TeamLabel(1)],
 		};
-		foreach (var s in AiSlots()) { e.Ai[s] = true; e.AiSpeed[s] = AiLevels[_aiLevel[s]].Speed; }
+		foreach (var s in AiSlots()) { e.Ai[s] = true; e.AiSpeed[s] = _aiLevel[s] == AutoLevel ? AutoSpeed : AiLevels[_aiLevel[s]].Speed; }
 		e.Reset();
 		return e;
 	}
@@ -242,8 +252,48 @@ else
 	private static readonly (string Icon, string Name, float Speed)[] AiLevels =
 	[
 		("🐢", "Langzaam", 0.45f), ("🚶", "Normaal", 0.7f), ("🏃", "Snel", 0.9f), ("🚀", "Supersnel", 1.1f),
+		("🎯", "Auto: past zich aan jouw niveau aan", -1f),
 	];
-	private int[] _aiLevel = [1, 1, 1, 1];
+	private const int AutoLevel = 4;
+	private int[] _aiLevel = [AutoLevel, AutoLevel, AutoLevel, AutoLevel];
+
+	// --- Skill: 0 = beginner, 1 = pro. Built up from match results and stored on this device. ---
+	private float _skill = 0.3f;
+	private int _gamesPlayed;
+	private bool _resultCounted;
+	private float AutoSpeed => 0.4f + _skill * 0.8f;
+	private string SkillText => $"{(int)MathF.Round(_skill * 100)} / 100 · {_gamesPlayed} potjes";
+
+	private async Task RecordResult(GameState s)
+	{
+		int my = _side % 2;
+		int mine = my == 0 ? s.LeftScore : s.RightScore, theirs = my == 0 ? s.RightScore : s.LeftScore;
+		// Bigger wins/losses move the rating more; beating a strong computer counts extra.
+		float margin = (mine - theirs) / (float)Math.Max(1, s.MaxScore);
+		float step = _gamesPlayed < 5 ? 0.15f : 0.08f;
+		_skill = Math.Clamp(_skill + margin * step, 0f, 1f);
+		_gamesPlayed++;
+		await JS.InvokeVoidAsync("localStorage.setItem", "pongSkill", $"{_skill.ToString(System.Globalization.CultureInfo.InvariantCulture)},{_gamesPlayed}");
+	}
+
+	private async Task LoadSkill()
+	{
+		var v = (await JS.InvokeAsync<string?>("localStorage.getItem", "pongSkill") ?? "").Split(',');
+		if (v.Length == 2 && float.TryParse(v[0], System.Globalization.CultureInfo.InvariantCulture, out var s) && int.TryParse(v[1], out var g))
+		{ _skill = Math.Clamp(s, 0f, 1f); _gamesPlayed = g; }
+	}
+
+	// --- Wi-Fi lobby or the worldwide internet lobby ---
+	private bool _online;
+
+	private async Task SetOnline(bool on)
+	{
+		if (on == _online) return;
+		_online = on;
+		_hosting = false;
+		_peers = [];
+		if (_netReady) await _net!.InvokeVoidAsync("setRoomCode", on ? "world" : "");
+	}
 
 	private async Task SetAiLevel(int slot, int level)
 	{
@@ -323,6 +373,7 @@ else
 				_disabled = dis.Split(',').Select(x => int.TryParse(x, out var n) ? n : -1).Where(n => n >= 0).ToHashSet();
 			_keep = await JS.InvokeAsync<string?>("localStorage.getItem", "pongKeepPowerUps") == "1";
 			await LoadSetup();
+			await LoadSkill();
 			_pong = await JS.InvokeAsync<IJSObjectReference>("import", "./js/pong.js");
 			_net = await JS.InvokeAsync<IJSObjectReference>("import", "./js/net.js");
 			StateHasChanged();
@@ -490,7 +541,10 @@ else
 		dt = Math.Min(dt, 0.1f);
 		var n = Math.Max(1, (int)MathF.Ceiling(dt * 120f));
 		for (var i = 0; i < n; i++) _engine.Tick(dt / n);
-		return _engine.Snapshot();
+		var snap = _engine.Snapshot();
+		if (snap.Winner < 0) _resultCounted = false;
+		else if (!_resultCounted) { _resultCounted = true; _ = RecordResult(snap); }
+		return snap;
 	}
 
 

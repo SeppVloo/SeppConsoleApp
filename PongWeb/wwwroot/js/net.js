@@ -88,8 +88,25 @@ function announce(to) { sendHello?.({ name: me.name, hosting: me.hosting, busy: 
 export async function start(dotnetRef, name) {
     dotnet = dotnetRef;
     me.name = name;
-    room = joinRoom({ appId: APP_ID }, diag.room = await roomName());
+    lanRoom = await roomName();
+    await connect(lanRoom);
     setInterval(pushDiag, 2000);
+}
+
+let lanRoom = "";
+
+// Internet play: everyone who enters the same code ends up in the same room, wherever they are.
+// Empty code = back to the automatic Wi-Fi room.
+export async function setRoomCode(code) {
+    code = (code || "").trim().toLowerCase();
+    await connect(code ? "net-" + code : lanRoom);
+}
+
+async function connect(roomId) {
+    if (room) { try { await room.leave(); } catch { } }
+    peers.clear(); players.clear(); host = null; me.busy = false; me.hosting = false;
+    pushPeers();
+    room = joinRoom({ appId: APP_ID }, diag.room = roomId);
     pushDiag();
 
     [sendHello, onHello] = room.makeAction("hello");
