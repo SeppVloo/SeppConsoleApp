@@ -55,6 +55,17 @@ else
 			{
 				<p class="muted small">Ook online: @string.Join(", ", _peers.Where(p => !p.Hosting).Select(p => p.Name))</p>
 			}
+			@if (_diag is not null)
+			{
+				<details class="diag">
+					<summary>Verbindingsinfo</summary>
+					<div>Lobby-code: <b>@_diag.Room[^Math.Min(6, _diag.Room.Length)..]</b> @(_diag.IpOk ? "" : "(IP niet gevonden!)")</div>
+					<div>Signaal-servers: <b>@_diag.Relays / @_diag.RelaysTotal</b> verbonden</div>
+					<div>Directe verbindingen: <b>@_diag.Peers</b></div>
+					<div>Berichten ontvangen: <b>@_diag.Hellos</b></div>
+					<div class="small">Lobby-code moet op alle apparaten gelijk zijn. 0 signaal-servers = netwerk/contentblocker blokkeert ze.</div>
+				</details>
+			}
 		}
 
 		<h3>Power-ups</h3>
@@ -69,6 +80,15 @@ else
 
 @code {
 	public record Peer(string Id, string Name, bool Hosting);
+	public record Diag(string Room, bool IpOk, int Relays, int RelaysTotal, int Peers, int Hellos);
+	private Diag? _diag;
+
+	[JSInvokable]
+	public void OnDiag(Diag diag)
+	{
+		_diag = diag;
+		StateHasChanged();
+	}
 
 	private ElementReference _canvas;
 	private DotNetObjectReference<Home>? _self;

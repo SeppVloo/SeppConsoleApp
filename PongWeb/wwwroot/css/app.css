@@ -46,3 +46,6 @@ html, body {
 .loading-progress circle:last-child { stroke: #4fc3f7; stroke-dasharray: calc(3.141 * var(--blazor-load-percentage, 0%) * 0.8), 500%; transition: stroke-dasharray .05s ease-in-out; }
 .loading-progress-text { position: absolute; text-align: center; font-weight: bold; inset: calc(20vh + 3.25rem) 0 auto .2rem; }
 .loading-progress-text:after { content: var(--blazor-load-percentage-text, "Laden"); }
+
+.diag { margin-top: 1rem; font-size: .85rem; color: #aaa; background: #1a1a1a; padding: .5rem; border-radius: 8px; }
+.diag summary { cursor: pointer; }
