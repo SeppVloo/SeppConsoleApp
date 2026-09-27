@@ -35,7 +35,28 @@ const IP_SERVICES = [
     async () => (await (await fetch("https://ifconfig.co/json", { cache: "no-store" })).json()).ip,
 ];
 
+// Public IPv4 via a STUN server (WebRTC). No website involved, so Safari's tracker/IP protection doesn't block it.
+function stunIp() {
+    return new Promise(resolve => {
+        let pc;
+        const done = ip => { try { pc?.close(); } catch { } resolve(ip); };
+        try {
+            pc = new RTCPeerConnection({ iceServers: [{ urls: ["stun:stun.l.google.com:19302", "stun:stun.cloudflare.com:3478"] }] });
+            pc.createDataChannel("x");
+            pc.onicecandidate = e => {
+                if (!e.candidate) return done(null);
+                const m = / (\d{1,3}(?:\.\d{1,3}){3}) \d+ typ srflx/.exec(e.candidate.candidate);
+                if (m) done(m[1]);
+            };
+            pc.createOffer().then(o => pc.setLocalDescription(o)).catch(() => done(null));
+            setTimeout(() => done(null), 4000);
+        } catch { done(null); }
+    });
+}
+
 async function publicIp() {
+    const s = await stunIp();
+    if (s) return s;
     for (const svc of IP_SERVICES) {
         try {
             const ip = await Promise.race([svc(), new Promise((_, rej) => setTimeout(() => rej(), 4000))]);
