@@ -101,6 +101,12 @@ else
 					}
 				</div>
 				<p class="muted small" style="margin:.5rem 0 0">Tik op een plek om te wisselen tussen speler en computer.</p>
+				@if (_teamSize == 2)
+				{
+					<ul class="powerups" style="grid-template-columns:1fr;margin-top:.5rem">
+						<li class="toggle @(_collide ? "on" : "off")" @onclick="ToggleCollide"><span class="pu-name">@(_collide ? "Batjes van teamgenoten botsen" : "Batjes van teamgenoten gaan door elkaar heen")</span><span class="switch"></span></li>
+					</ul>
+				}
 				<p class="muted small" style="margin:.5rem 0 .75rem">@SetupText()</p>
 				<button class="btn primary wide" @onclick="Start">▶ @(RemoteSlots().Count == 0 ? "Spelen" : "Nieuw spel starten")</button>
 			</div>
@@ -192,6 +198,13 @@ else
 	}
 
 	private bool _keep;
+	private bool _collide = true;
+
+	private async Task ToggleCollide()
+	{
+		_collide = !_collide;
+		await JS.InvokeVoidAsync("localStorage.setItem", "pongPaddlesCollide", _collide ? "1" : "0");
+	}
 
 	private async Task ToggleKeep()
 	{
@@ -204,6 +217,7 @@ else
 		var e = new PongEngine
 		{
 			TeamSize = _teamSize,
+			PaddlesCollide = _collide,
 			KeepPowerUpsOnGoal = _keep,
 			WallMinHits = _wallMin,
 			WallMaxHits = _wallMax,
@@ -372,6 +386,7 @@ else
 			if (!string.IsNullOrEmpty(dis))
 				_disabled = dis.Split(',').Select(x => int.TryParse(x, out var n) ? n : -1).Where(n => n >= 0).ToHashSet();
 			_keep = await JS.InvokeAsync<string?>("localStorage.getItem", "pongKeepPowerUps") == "1";
+			_collide = await JS.InvokeAsync<string?>("localStorage.getItem", "pongPaddlesCollide") != "0";
 			await LoadSetup();
 			await LoadSkill();
 			_pong = await JS.InvokeAsync<IJSObjectReference>("import", "./js/pong.js");

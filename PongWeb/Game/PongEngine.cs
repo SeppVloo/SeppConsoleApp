@@ -25,6 +25,9 @@ public sealed class PongEngine
     /// <summary>1 = 1 tegen 1, 2 = 2 tegen 2.</summary>
     public int TeamSize { get; set; } = 1;
 
+    /// <summary>2v2: true = teammates' paddles bump into each other, false = they pass through each other.</summary>
+    public bool PaddlesCollide { get; set; } = true;
+
     /// <summary>Which slots are played by the computer.</summary>
     public bool[] Ai { get; } = new bool[MaxSlots];
 
@@ -129,7 +132,7 @@ public sealed class PongEngine
             if (Ai[p]) _target[p] = AiTarget(p);
             UpdatePaddle(p, dt);
         }
-        if (TeamSize > 1) { CollideTeammates(0, 2); CollideTeammates(1, 3); }
+        if (TeamSize > 1 && PaddlesCollide) { CollideTeammates(0, 2); CollideTeammates(1, 3); }
 
         if (_serveTimer > 0)
         {
