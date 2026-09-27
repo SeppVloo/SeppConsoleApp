@@ -26,16 +26,33 @@ function pushDiag() {
     dotnet?.invokeMethodAsync("OnDiag", { ...diag });
 }
 
-async function roomName() {
-    try {
-        const r = await fetch("https://api.ipify.org?format=json", { cache: "no-store" });
-        const { ip } = await r.json();
-        diag.ipOk = true;
-        const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(ip));
-        return "lan-" + [...new Uint8Array(hash)].slice(0, 8).map(b => b.toString(16).padStart(2, "0")).join("");
-    } catch {
-        return "lan-fallback";
+// Several IP lookup services: Safari/iOS content blockers or "Limit IP tracking" often block one of them.
+const IP_SERVICES = [
+    async () => (await (await fetch("https://api.ipify.org?format=json", { cache: "no-store" })).json()).ip,
+    async () => (await (await fetch("https://api64.ipify.org?format=json", { cache: "no-store" })).json()).ip,
+    async () => (await (await fetch("https://icanhazip.com", { cache: "no-store" })).text()).trim(),
+    async () => /ip=([^\n]+)/.exec(await (await fetch("https://www.cloudflare.com/cdn-cgi/trace", { cache: "no-store" })).text())[1].trim(),
+    async () => (await (await fetch("https://ifconfig.co/json", { cache: "no-store" })).json()).ip,
+];
+
+async function publicIp() {
+    for (const svc of IP_SERVICES) {
+        try {
+            const ip = await Promise.race([svc(), new Promise((_, rej) => setTimeout(() => rej(), 4000))]);
+            if (ip && /^[0-9a-f.:]+$/i.test(ip)) return ip;
+        } catch { }
     }
+    return null;
+}
+
+async function roomName() {
+    const ip = await publicIp();
+    if (!ip) return "lan-fallback";
+    diag.ipOk = true;
+    // IPv6 differs per device; use the /64 network prefix so devices on the same Wi-Fi still match.
+    const key = ip.includes(":") ? ip.split(":").slice(0, 4).join(":") : ip;
+    const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(key));
+    return "lan-" + [...new Uint8Array(hash)].slice(0, 8).map(b => b.toString(16).padStart(2, "0")).join("");
 }
 
 function pushPeers() {
