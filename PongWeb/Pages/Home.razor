@@ -55,14 +55,29 @@ else
 					<button class="btn @(_teamSize == 1 ? "sel" : "")" @onclick="() => SetTeamSize(1)">1 tegen 1</button>
 					<button class="btn @(_teamSize == 2 ? "sel" : "")" @onclick="() => SetTeamSize(2)">2 tegen 2</button>
 				</div>
-				<label style="margin-top:.75rem">COMPUTERSPELERS</label>
-				<div class="seg">
-					@for (var n = 0; n <= MaxAi; n++)
+				<div class="teams">
+					@for (var t = 0; t < 2; t++)
 					{
-						var c = n;
-						<button class="btn @(_aiCount == c ? "sel" : "")" @onclick="() => SetAi(c)">@c</button>
+						var team = t;
+						<div class="team">
+							<label>@(team == 0 ? "JOUW TEAM" : "TEGENSTANDERS")</label>
+							@foreach (var s in Enumerable.Range(0, _teamSize * 2).Where(s => s % 2 == team))
+							{
+								var slot = s;
+								if (slot == 0)
+								{
+									<div class="seat me">🙂 Jij</div>
+								}
+								else
+								{
+									var ai = (_aiMask & (1 << slot)) != 0;
+									<button class="btn seat @(ai ? "ai" : "")" @onclick="() => ToggleSeat(slot)">@(ai ? "🤖 Computer" : "👤 Speler")</button>
+								}
+							}
+						</div>
 					}
 				</div>
+				<p class="muted small" style="margin:.5rem 0 0">Tik op een plek om te wisselen tussen speler en computer.</p>
 				<p class="muted small" style="margin:.5rem 0 .75rem">@SetupText()</p>
 				<button class="btn primary wide" @onclick="Start">▶ @(RemoteSlots().Count == 0 ? "Spelen" : "Nieuw spel starten")</button>
 			</div>
@@ -114,6 +129,8 @@ else
 				<li class="toggle @(_keep ? "on" : "off")" @onclick="ToggleKeep"><span class="pu-name">Power-ups blijven staan na een goal</span><span class="switch"></span></li>
 				<li><span class="pu-name">Muurtje: min. bounces</span><button class="btn icon" @onclick="() => SetWall(_wallMin - 1, _wallMax)">−</button><b style="min-width:1.5rem;text-align:center">@_wallMin</b><button class="btn icon" @onclick="() => SetWall(_wallMin + 1, _wallMax)">+</button></li>
 				<li><span class="pu-name">Muurtje: max. bounces</span><button class="btn icon" @onclick="() => SetWall(_wallMin, _wallMax - 1)">−</button><b style="min-width:1.5rem;text-align:center">@_wallMax</b><button class="btn icon" @onclick="() => SetWall(_wallMin, _wallMax + 1)">+</button></li>
+				<li><span class="pu-name">Muurtje: min. grootte</span><button class="btn icon" @onclick="() => SetWallSize(_wallSizeMin - WallSizeStep, _wallSizeMax)">−</button><b style="min-width:2.2rem;text-align:center">@_wallSizeMin</b><button class="btn icon" @onclick="() => SetWallSize(_wallSizeMin + WallSizeStep, _wallSizeMax)">+</button></li>
+				<li><span class="pu-name">Muurtje: max. grootte</span><button class="btn icon" @onclick="() => SetWallSize(_wallSizeMin, _wallSizeMax - WallSizeStep)">−</button><b style="min-width:2.2rem;text-align:center">@_wallSizeMax</b><button class="btn icon" @onclick="() => SetWallSize(_wallSizeMin, _wallSizeMax + WallSizeStep)">+</button></li>
 			</ul>
 			<p class="muted small" style="margin:.6rem 0 0">Max @PongEngine.MaxPickups power-ups tegelijk in het veld. Bij online spelen gelden de instellingen van wie het spel start.</p>
 		</div>
@@ -167,6 +184,8 @@ else
 			KeepPowerUpsOnGoal = _keep,
 			WallMinHits = _wallMin,
 			WallMaxHits = _wallMax,
+			WallMinSize = _wallSizeMin,
+			WallMaxSize = _wallSizeMax,
 			EnabledPowerUps = Enumerable.Range(0, PowerUpRegistry.All.Count).Where(i => !_disabled.Contains(i)).ToArray(),
 			TeamNames = [TeamLabel(0), TeamLabel(1)],
 		};
@@ -176,13 +195,13 @@ else
 	}
 
 	// --- Game setup ---
-	private int _teamSize = 1, _aiCount = 1, _wallMin = 3, _wallMax = 3;
+	private int _teamSize = 1, _aiMask = 0b0010, _wallMin = 3, _wallMax = 3;
+	private const int WallSizeStep = 10;
+	private int _wallSizeMin = 110, _wallSizeMax = 110;
 	private string[] _slotNames = new string[PongEngine.MaxSlots];
 	private List<string> _lobbyPlayers = [];
-	private int MaxAi => Math.Min(3, _teamSize * 2 - 1);
 
-	// Computers take the opponents' places first, then your teammate's.
-	private List<int> AiSlots() => (_teamSize == 1 ? new[] { 1 } : new[] { 1, 3, 2 }).Take(_aiCount).ToList();
+	private List<int> AiSlots() => Enumerable.Range(1, _teamSize * 2 - 1).Where(s => (_aiMask & (1 << s)) != 0).ToList();
 	private List<int> RemoteSlots() => Enumerable.Range(1, _teamSize * 2 - 1).Except(AiSlots()).ToList();
 
 	private string SetupText()
@@ -204,13 +223,22 @@ else
 	private async Task SetTeamSize(int n)
 	{
 		_teamSize = n;
-		_aiCount = Math.Min(_aiCount, MaxAi);
 		await SaveSetup();
 	}
 
-	private async Task SetAi(int n)
+	private async Task ToggleSeat(int slot)
 	{
-		_aiCount = n;
+		_aiMask ^= 1 << slot;
+		await SaveSetup();
+	}
+
+	private async Task SetWallSize(int min, int max)
+	{
+		min = Math.Clamp(min, 30, 250);
+		max = Math.Clamp(max, 30, 250);
+		if (min != _wallSizeMin && min > max) max = min;
+		if (max != _wallSizeMax && max < min) min = max;
+		_wallSizeMin = min; _wallSizeMax = max;
 		await SaveSetup();
 	}
 
@@ -225,17 +253,19 @@ else
 	}
 
 	private async Task SaveSetup() =>
-		await JS.InvokeVoidAsync("localStorage.setItem", "pongSetup", $"{_teamSize},{_aiCount},{_wallMin},{_wallMax}");
+		await JS.InvokeVoidAsync("localStorage.setItem", "pongSetup2", $"{_teamSize},{_aiMask},{_wallMin},{_wallMax},{_wallSizeMin},{_wallSizeMax}");
 
 	private async Task LoadSetup()
 	{
-		var v = await JS.InvokeAsync<string?>("localStorage.getItem", "pongSetup");
+		var v = await JS.InvokeAsync<string?>("localStorage.getItem", "pongSetup2");
 		var p = (v ?? "").Split(',').Select(x => int.TryParse(x, out var n) ? n : 0).ToArray();
-		if (p.Length != 4) return;
+		if (p.Length != 6) return;
 		_teamSize = Math.Clamp(p[0], 1, 2);
-		_aiCount = Math.Clamp(p[1], 0, MaxAi);
+		_aiMask = p[1] & 0b1110;
 		_wallMin = Math.Clamp(p[2], 1, 10);
 		_wallMax = Math.Clamp(p[3], _wallMin, 10);
+		_wallSizeMin = Math.Clamp(p[4], 30, 250);
+		_wallSizeMax = Math.Clamp(p[5], _wallSizeMin, 250);
 	}
 
 	private void FillSlotNames()

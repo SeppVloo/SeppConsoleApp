@@ -118,6 +118,13 @@ html, body {
 .seg { display: flex; gap: .4rem; }
 .seg .btn { flex: 1; padding: .6rem .5rem; }
 .seg .btn.sel { background: linear-gradient(90deg, var(--cyan), #818cf8); color: #0b1026; border-color: transparent; }
+.teams { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem; margin-top: .75rem; }
+.team { display: flex; flex-direction: column; gap: .4rem; }
+.team label { margin-bottom: 0; }
+.seat { padding: .6rem .5rem; border-radius: 12px; font-size: .95rem; font-weight: 600; text-align: center; }
+.seat.me { background: #22d3ee22; border: 1px solid #22d3ee66; color: var(--cyan); }
+.btn.seat { width: 100%; }
+.btn.seat.ai { background: #f472b61a; border-color: #f472b655; }
 .powerups li .btn.icon { padding: .2rem .6rem; }
 
 .status {
