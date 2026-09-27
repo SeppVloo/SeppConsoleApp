@@ -146,7 +146,7 @@ html, body {
 .powerups .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: #fff; transition: transform .2s; }
 .powerups .toggle.on .switch { background: var(--green); }
 .powerups .toggle.on .switch::after { transform: translateX(12px); }
-.powerups .dot { flex: none;
+.powerups .dot { flex: none; display: inline-flex; width: 1.8rem; height: 1.8rem; border-radius: 50%; color: #0b1026; font-weight: 800; align-items: center; justify-content: center; box-shadow: 0 0 12px currentColor; }
 
 .diag { margin-top: .5rem; font-size: .8rem; color: var(--muted); }
 .diag summary { cursor: pointer; list-style: none; text-align: center; opacity: .6; }
