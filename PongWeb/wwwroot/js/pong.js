@@ -230,13 +230,21 @@ function draw(raw, dt) {
     // Wall
     for (const w of (s.walls || [])) {
         const hp = w.hp / w.maxHp;
+        const col = teamColor(w.owner);
+        const ghost = w.side === w.owner; // own half: owner's ball passes through
         ctx.save();
         ctx.translate(w.x + 6, w.y + w.h / 2);
         ctx.rotate(w.angle || 0);
-        ctx.globalAlpha = 0.2; ctx.fillStyle = "#38bdf8";
+        ctx.globalAlpha = 0.2; ctx.fillStyle = col;
         roundRect(-12, -w.h / 2 - 6, 24, w.h + 12, 10); ctx.fill();
         ctx.globalAlpha = 0.35 + hp * 0.65;
-        roundRect(-6, -w.h / 2, 12, w.h, 5); ctx.fill();
+        if (ghost) {
+            ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.setLineDash([6, 4]);
+            roundRect(-5, -w.h / 2, 10, w.h, 5); ctx.stroke(); ctx.setLineDash([]);
+            ctx.globalAlpha *= 0.35; roundRect(-6, -w.h / 2, 12, w.h, 5); ctx.fill();
+        } else {
+            roundRect(-6, -w.h / 2, 12, w.h, 5); ctx.fill();
+        }
         ctx.globalAlpha = 1;
         ctx.fillStyle = "rgba(11,16,38,0.8)";
         for (let k = 1; k < w.maxHp; k++) ctx.fillRect(-6, -w.h / 2 + w.h * k / w.maxHp - 1, 12, 2);

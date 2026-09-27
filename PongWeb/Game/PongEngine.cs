@@ -189,21 +189,24 @@ public sealed class PongEngine
         float lo = Math.Clamp(MathF.Min(WallMinSize, WallMaxSize), 20f, H - 80);
         float wh = Math.Clamp(lo + (float)_rng.NextDouble() * (MathF.Max(WallMinSize, WallMaxSize) - lo), lo, H - 80);
 
-        // Max walls per side: the oldest one makes room for the new one.
-        var own = _walls.Where(w => w.Side == (int)picker).ToList();
+        // Max walls per team: the oldest one makes room for the new one.
+        var own = _walls.Where(w => w.Owner == (int)picker).ToList();
         if (own.Count >= MaxWallsPerSide) _walls.Remove(own[0]);
+
+        // Own half = your ball passes through; other half = a solid wall for everyone.
+        var half = _rng.Next(2) == 0 ? Side.Left : Side.Right;
 
         // Spread walls over a few columns so they don't stack on top of each other.
         float x = 0, y = 0;
         for (int attempt = 0; attempt < 20; attempt++)
         {
             float col = W * (0.18f + 0.06f * _rng.Next(3));
-            x = picker == Side.Left ? col : W - col - WallWidth;
+            x = half == Side.Left ? col : W - col - WallWidth;
             y = (float)(40 + _rng.NextDouble() * (H - 80 - wh));
             var cand = new WallInfo { X = x, Y = y, H = wh };
             if (!_walls.Any(w => WallsOverlap(w, cand))) break;
         }
-        _walls.Add(new WallInfo { Side = (int)picker, X = x, Y = y, H = wh, Hp = hp, MaxHp = hp });
+        _walls.Add(new WallInfo { Side = (int)half, Owner = (int)picker, X = x, Y = y, H = wh, Hp = hp, MaxHp = hp });
     }
 
     // Walls are rotated rectangles. The test runs in the wall's own frame and uses the previous ball position,
@@ -211,6 +214,7 @@ public sealed class PongEngine
     private void HitWall(int index)
     {
         var w = _walls[index];
+        if (w.Side == w.Owner && (int)_lastHit == w.Owner) return; // own wall on own half: your ball flies through
         const float r = GameState.BallSize / 2;
         const float hw = WallWidth / 2;
         float hh = w.H / 2;

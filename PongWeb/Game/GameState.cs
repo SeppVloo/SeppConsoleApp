@@ -50,7 +50,10 @@ public struct PickupInfo
 
 public struct WallInfo
 {
+    /// <summary>Half of the field the wall stands on (0 = left, 1 = right).</summary>
     public int Side { get; set; }
+    /// <summary>Team that picked up the wall (its colour).</summary>
+    public int Owner { get; set; }
     public float X { get; set; }
     public float Y { get; set; }
     public float H { get; set; }
