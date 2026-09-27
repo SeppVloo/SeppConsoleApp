@@ -10,7 +10,9 @@ const APP_ID = "sepp-pong-v1";
 
 let room, dotnet, me = { name: "", hosting: false, busy: false };
 const peers = new Map(); // peerId -> { name, hosting, busy }
-let opponent = null;
+// Host: remote players by peer id. Client: the host's peer id.
+const players = new Map(); // peerId -> { slot, name }
+let host = null, needed = 0, freeSlots = [], fixedNames = [];
 let sendHello, sendJoin, sendReply, sendState, sendInput, sendCmd;
 let onHello, onJoin, onReply, onStateMsg, onInputMsg, onCmdMsg;
 let onState = null, onInput = null, onCmd = null;
@@ -101,18 +103,24 @@ export async function start(dotnetRef, name) {
     room.onPeerLeave(id => {
         peers.delete(id);
         pushPeers();
-        if (id === opponent) endGame("Verbinding met tegenstander verbroken.");
+        dropPeer(id);
     });
 
     onHello((data, id) => { diag.hellos++; peers.set(id, data); pushPeers(); });
 
     onJoin((data, id) => {
-        if (me.hosting && !me.busy) {
-            me.busy = true;
-            opponent = id;
-            sendReply({ ok: true, name: me.name }, id);
-            announce();
-            dotnet.invokeMethodAsync("OnGameStart", 0, data.name);
+        if (me.hosting && !me.busy && players.size < needed && !players.has(id)) {
+            const slot = freeSlots.shift();
+            players.set(id, { slot, name: data.name });
+            sendReply({ ok: true, slot }, id);
+            dotnet.invokeMethodAsync("OnLobbyPlayers", [...players.values()].map(p => p.name));
+            if (players.size === needed) {
+                me.busy = true;
+                announce();
+                const names = [...fixedNames, ...[...players.values()].map(p => ({ slot: p.slot, name: p.name }))];
+                for (const pid of players.keys()) sendCmd({ type: "start", names }, pid);
+                dotnet.invokeMethodAsync("OnGameStart", 0, names);
+            }
         } else {
             sendReply({ ok: false }, id);
         }
@@ -120,28 +128,53 @@ export async function start(dotnetRef, name) {
 
     onReply((data, id) => {
         if (data.ok) {
-            opponent = id;
+            host = id;
             me.busy = true;
             announce();
-            dotnet.invokeMethodAsync("OnGameStart", 1, data.name);
+            mySlot = data.slot;
+            dotnet.invokeMethodAsync("OnStatus", "Aangemeld! Wachten tot alle spelers er zijn...");
         } else {
-            dotnet.invokeMethodAsync("OnStatus", "Dat spel is al bezet.");
+            dotnet.invokeMethodAsync("OnStatus", "Dat spel is al vol.");
         }
     });
 
-    onStateMsg((s, id) => { if (id === opponent) onState?.(s); });
-    onInputMsg((m, id) => { if (id === opponent) onInput?.(m.y); });
+    onStateMsg((s, id) => { if (id === host) onState?.(s); });
+    onInputMsg((m, id) => { const p = players.get(id); if (p) onInput?.(p.slot, m.y); });
     onCmdMsg((m, id) => {
-        if (id !== opponent) return;
-        if (m.type === "leave") endGame("Tegenstander is gestopt.");
-        else onCmd?.(m);
+        if (id === host) {
+            if (m.type === "leave") endGame("De host is gestopt.");
+            else if (m.type === "start") dotnet.invokeMethodAsync("OnGameStart", mySlot, m.names);
+            else onCmd?.(m);
+        } else if (players.has(id)) {
+            if (m.type === "leave") dropPeer(id);
+            else onCmd?.(m);
+        }
     });
 
     announce();
 }
 
+let mySlot = 0;
+
+function dropPeer(id) {
+    if (id === host) { endGame("Verbinding met de host verbroken."); return; }
+    const p = players.get(id);
+    if (!p) return;
+    players.delete(id);
+    if (me.busy) {
+        // Game running: the computer takes over this player's paddle.
+        dotnet?.invokeMethodAsync("OnPlayerLeft", p.slot, p.name);
+        if (players.size === 0) endGame("Alle andere spelers zijn gestopt.");
+    } else {
+        freeSlots.unshift(p.slot);
+        freeSlots.sort((a, b) => a - b);
+        dotnet?.invokeMethodAsync("OnLobbyPlayers", [...players.values()].map(p => p.name));
+    }
+}
+
 function endGame(reason) {
-    opponent = null;
+    host = null;
+    players.clear();
     me.busy = false;
     me.hosting = false;
     announce();
@@ -149,12 +182,23 @@ function endGame(reason) {
 }
 
 export function setName(name) { me.name = name; announce(); }
-export function setHosting(on) { me.hosting = on; me.busy = false; announce(); }
+// slots: the free slots remote players will get, in join order.
+export function setHosting(on, slots, known) {
+    me.hosting = on; me.busy = false;
+    players.clear();
+    freeSlots = [...(slots || [])];
+    fixedNames = known || [];
+    needed = freeSlots.length;
+    announce();
+}
 export function join(peerId) { sendJoin({ name: me.name }, peerId); }
 
+function others() { return host ? [host] : [...players.keys()]; }
+
 export function leave() {
-    if (opponent) sendCmd({ type: "leave" }, opponent);
-    opponent = null;
+    for (const id of others()) sendCmd({ type: "leave" }, id);
+    host = null;
+    players.clear();
     me.busy = false;
     me.hosting = false;
     announce();
@@ -162,9 +206,9 @@ export function leave() {
 
 // Used by pong.js during a match
 export const link = {
-    sendState: s => opponent && sendState(s, opponent),
-    sendInput: y => opponent && sendInput({ y }, opponent),
-    sendCmd: m => opponent && sendCmd(m, opponent),
+    sendState: s => { const ids = [...players.keys()]; if (ids.length) sendState(s, ids); },
+    sendInput: y => host && sendInput({ y }, host),
+    sendCmd: m => { const ids = others(); if (ids.length) sendCmd(m, ids); },
     set onState(f) { onState = f; },
     set onInput(f) { onInput = f; },
     set onCmd(f) { onCmd = f; },

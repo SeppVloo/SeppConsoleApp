@@ -1,11 +1,14 @@
 namespace PongWeb.Game;
 
 /// <summary>Authoritative game simulation (runs on host or in practice mode).</summary>
+/// <remarks>
+/// Player slots: team = slot % 2 (0 = left, 1 = right), lane = slot / 2.
+/// 1v1 uses slots 0 and 1; 2v2 uses slots 0..3 where each team splits the height in a top and bottom lane.
+/// </remarks>
 public sealed class PongEngine
 {
     private const float W = GameState.Width;
     private const float H = GameState.Height;
-    private const float BasePaddleH = 90f;
     private const float PaddleSpeed = 600f;
     private const float StartSpeed = 340f;
     private const float MaxSpeed = 950f;
@@ -13,9 +16,17 @@ public sealed class PongEngine
     private const float SpeedUpPerHit = 1.05f;
     private const float SpawnInterval = 7f;
     private const float ServeDelay = 1f;
+    public const int MaxSlots = 4;
 
     public int MaxScore { get; set; } = 7;
-    public bool AiRight { get; set; }
+
+    /// <summary>1 = 1 tegen 1, 2 = 2 tegen 2.</summary>
+    public int TeamSize { get; set; } = 1;
+
+    /// <summary>Which slots are played by the computer.</summary>
+    public bool[] Ai { get; } = new bool[MaxSlots];
+
+    public string[] TeamNames { get; set; } = ["Links", "Rechts"];
 
     /// <summary>Indices into <see cref="PowerUpRegistry.All"/> that may spawn. Empty = no power-ups.</summary>
     public IReadOnlyList<int> EnabledPowerUps { get; set; } = Enumerable.Range(0, PowerUpRegistry.All.Count).ToArray();
@@ -23,10 +34,13 @@ public sealed class PongEngine
     /// <summary>If true, power-ups on the field, active effects and walls survive a goal.</summary>
     public bool KeepPowerUpsOnGoal { get; set; }
 
+    /// <summary>A new wall gets a random number of hit points between these values (inclusive).</summary>
+    public int WallMinHits { get; set; } = 3;
+    public int WallMaxHits { get; set; } = 3;
+
     public const int MaxPickups = 3;
     public const float WallWidth = 12f;
     public const float WallHeight = 110f;
-    public const int WallHits = 3;
     private readonly List<WallInfo> _walls = new();
     private readonly List<PickupInfo> _pickups = new();
     private int _wallSeq;
@@ -37,9 +51,9 @@ public sealed class PongEngine
     private readonly List<(PowerUp Def, Side Picker, float Remaining)> _effects = new();
 
     private float _bx, _by, _vx, _vy;
-    private readonly float[] _py = { H / 2, H / 2 };
-    private readonly float[] _ph = { BasePaddleH, BasePaddleH };
-    private readonly float?[] _target = new float?[2];
+    private readonly float[] _py = new float[MaxSlots];
+    private readonly float[] _ph = new float[MaxSlots];
+    private readonly float?[] _target = new float?[MaxSlots];
     private readonly int[] _score = new int[2];
     private Side _lastHit;
     private float _serveTimer;
@@ -51,6 +65,12 @@ public sealed class PongEngine
 
     public PongEngine() => Reset();
 
+    private int PaddleCount => TeamSize * 2;
+    private float BasePaddleH => TeamSize == 1 ? 90f : 70f;
+    private float LaneTop(int p) => TeamSize == 1 ? 0 : p / 2 * (H / 2);
+    private float LaneBottom(int p) => TeamSize == 1 ? H : LaneTop(p) + H / 2;
+    private static float PaddleX(int p) => p % 2 == 0 ? GameState.PaddleMargin : W - GameState.PaddleMargin - GameState.PaddleWidth;
+
     public void Reset()
     {
         _score[0] = _score[1] = 0;
@@ -60,11 +80,17 @@ public sealed class PongEngine
         _pickups.Clear();
         _walls.Clear();
         _spawnTimer = SpawnInterval;
-        _py[0] = _py[1] = H / 2;
+        for (int p = 0; p < MaxSlots; p++) _py[p] = (LaneTop(p) + LaneBottom(p)) / 2;
         Serve(toRight: _rng.Next(2) == 0);
     }
 
-    public void SetTarget(Side side, float? y) => _target[(int)side] = y;
+    public void SetTarget(int slot, float? y)
+    {
+        if (slot < 0 || slot >= MaxSlots) return;
+        // In 2v2 the whole screen height maps onto the player's own lane.
+        if (y is float v && TeamSize > 1) y = LaneTop(slot) + v / 2;
+        _target[slot] = y;
+    }
 
     public void Tick(float dt)
     {
@@ -80,9 +106,11 @@ public sealed class PongEngine
         _mods.Reset();
         foreach (var e in _effects) e.Def.Modify(_mods, e.Picker);
 
-        if (AiRight) _target[1] = AiTarget();
-        UpdatePaddle(0, dt);
-        UpdatePaddle(1, dt);
+        for (int p = 0; p < PaddleCount; p++)
+        {
+            if (Ai[p]) _target[p] = AiTarget(p);
+            UpdatePaddle(p, dt);
+        }
 
         if (_serveTimer > 0)
         {
@@ -100,13 +128,14 @@ public sealed class PongEngine
 
         for (int i = _walls.Count - 1; i >= 0; i--) HitWall(i);
 
-        float lx = GameState.PaddleMargin;
-        if (_vx < 0 && _bx <= lx + GameState.PaddleWidth && _bx + GameState.BallSize >= lx && OverlapsPaddle(0))
-            Bounce(Side.Left);
-
-        float rx = W - GameState.PaddleMargin - GameState.PaddleWidth;
-        if (_vx > 0 && _bx + GameState.BallSize >= rx && _bx <= rx + GameState.PaddleWidth && OverlapsPaddle(1))
-            Bounce(Side.Right);
+        for (int p = 0; p < PaddleCount; p++)
+        {
+            float x = PaddleX(p);
+            bool hit = p % 2 == 0
+                ? _vx < 0 && _bx <= x + GameState.PaddleWidth && _bx + GameState.BallSize >= x
+                : _vx > 0 && _bx + GameState.BallSize >= x && _bx <= x + GameState.PaddleWidth;
+            if (hit && OverlapsPaddle(p)) { Bounce(p); break; }
+        }
 
         UpdatePowerUps(dt);
 
@@ -114,31 +143,39 @@ public sealed class PongEngine
         else if (_bx > W) Score(Side.Left);
     }
 
-    public GameState Snapshot() => new()
+    public GameState Snapshot()
     {
-        BallX = _bx, BallY = _by,
-        LeftY = _py[0], RightY = _py[1],
-        LeftH = _ph[0], RightH = _ph[1],
-        LeftInverted = _mods.Inverted[0], RightInverted = _mods.Inverted[1],
-        BallSpeedFactor = _mods.BallSpeedFactor,
-        LeftScore = _score[0], RightScore = _score[1], MaxScore = MaxScore,
-        PowerUps = _pickups.ToArray(),
-        Winner = _winner, Serving = _serveTimer > 0,
-        HitSeq = _hitSeq, ScoreSeq = _scoreSeq, PowerSeq = _powerSeq,
-        PowerText = _powerText,
-        Walls = _walls.ToArray(), WallSeq = _wallSeq,
-    };
+        var paddles = new PaddleInfo[PaddleCount];
+        for (int p = 0; p < paddles.Length; p++)
+            paddles[p] = new PaddleInfo { X = PaddleX(p), Y = _py[p], H = _ph[p], Team = p % 2, Inverted = _mods.Inverted[p % 2] };
+
+        return new()
+        {
+            BallX = _bx, BallY = _by,
+            Paddles = paddles, TeamSize = TeamSize,
+            BallSpeedFactor = _mods.BallSpeedFactor,
+            LeftScore = _score[0], RightScore = _score[1], MaxScore = MaxScore,
+            PowerUps = _pickups.ToArray(),
+            Winner = _winner, Serving = _serveTimer > 0,
+            HitSeq = _hitSeq, ScoreSeq = _scoreSeq, PowerSeq = _powerSeq,
+            PowerText = _powerText,
+            Walls = _walls.ToArray(), WallSeq = _wallSeq,
+        };
+    }
 
     /// <summary>Places a wall in front of the picker's goal (one per side). Picking another one refreshes it.</summary>
     public void SpawnWall(Side picker)
     {
+        int min = Math.Max(1, Math.Min(WallMinHits, WallMaxHits));
+        int max = Math.Max(min, WallMaxHits);
+        int hp = _rng.Next(min, max + 1);
         _walls.RemoveAll(w => w.Side == (int)picker);
         _walls.Add(new WallInfo
         {
             Side = (int)picker,
             X = picker == Side.Left ? W * 0.22f : W * 0.78f - WallWidth,
             Y = (float)(40 + _rng.NextDouble() * (H - 80 - WallHeight)),
-            H = WallHeight, Hp = WallHits, MaxHp = WallHits,
+            H = WallHeight, Hp = hp, MaxHp = hp,
         });
     }
 
@@ -191,16 +228,16 @@ public sealed class PongEngine
         _lastHit = toRight ? Side.Left : Side.Right;
     }
 
-    private bool OverlapsPaddle(int i)
+    private bool OverlapsPaddle(int p)
     {
-        float top = _py[i] - _ph[i] / 2, bottom = _py[i] + _ph[i] / 2;
+        float top = _py[p] - _ph[p] / 2, bottom = _py[p] + _ph[p] / 2;
         return _by + GameState.BallSize >= top && _by <= bottom;
     }
 
-    private void Bounce(Side side)
+    private void Bounce(int p)
     {
-        int i = (int)side;
-        float rel = Math.Clamp((_by + GameState.BallSize / 2 - _py[i]) / (_ph[i] / 2), -1f, 1f);
+        var side = (Side)(p % 2);
+        float rel = Math.Clamp((_by + GameState.BallSize / 2 - _py[p]) / (_ph[p] / 2), -1f, 1f);
         float angle = rel * MaxBounceDeg * MathF.PI / 180f;
         float speed = MathF.Min(MathF.Sqrt(_vx * _vx + _vy * _vy) * SpeedUpPerHit, MaxSpeed);
         float dir = side == Side.Left ? 1 : -1;
@@ -213,22 +250,27 @@ public sealed class PongEngine
         _hitSeq++;
     }
 
-    private void UpdatePaddle(int i, float dt)
+    private void UpdatePaddle(int p, float dt)
     {
-        float h = Math.Clamp(BasePaddleH * _mods.PaddleScale[i], 30f, H * 0.9f);
-        _ph[i] = h;
-        if (_target[i] is float y)
+        int team = p % 2;
+        float top = LaneTop(p), bottom = LaneBottom(p);
+        float h = Math.Clamp(BasePaddleH * _mods.PaddleScale[team], 30f, (bottom - top) * 0.9f);
+        _ph[p] = h;
+        if (_target[p] is float y)
         {
-            if (_mods.Inverted[i]) y = H - y;
-            float speed = PaddleSpeed * (AiRight && i == 1 ? 0.7f : 1f);
+            if (_mods.Inverted[team]) y = top + bottom - y;
+            float speed = PaddleSpeed * (Ai[p] ? 0.7f : 1f);
             float max = speed * dt;
-            _py[i] += Math.Clamp(y - _py[i], -max, max);
+            _py[p] += Math.Clamp(y - _py[p], -max, max);
         }
-        _py[i] = Math.Clamp(_py[i], h / 2, H - h / 2);
+        _py[p] = Math.Clamp(_py[p], top + h / 2, bottom - h / 2);
     }
 
-    private float AiTarget() =>
-        _vx > 0 ? _by + GameState.BallSize / 2 : H / 2;
+    private float AiTarget(int p)
+    {
+        bool incoming = p % 2 == 0 ? _vx < 0 : _vx > 0;
+        return incoming ? _by + GameState.BallSize / 2 : (LaneTop(p) + LaneBottom(p)) / 2;
+    }
 
     private void UpdatePowerUps(float dt)
     {
@@ -261,7 +303,7 @@ public sealed class PongEngine
             if (def.DurationSec > 0) _effects.Add((def, _lastHit, def.DurationSec));
             def.Activate(this, _lastHit);
             _powerSeq++;
-            _powerText = $"{(_lastHit == Side.Left ? "Links" : "Rechts")}: {def.Name}";
+            _powerText = $"{TeamNames[(int)_lastHit]}: {def.Name}";
         }
     }
 

@@ -40,7 +40,7 @@ export function start(el, dotnetRef, gameMode, side, powerUpInfo) {
     canvas.onpointerup = canvas.onpointercancel = () => setTarget(null);
 
     if (mode === "host") {
-        link.onInput = y => dotnet.invokeMethod("SetTarget", 1, y);
+        link.onInput = (slot, y) => dotnet.invokeMethod("SetTarget", slot, y);
         link.onCmd = m => { if (m.type === "restart") dotnet.invokeMethod("Restart"); };
     } else if (mode === "client") {
         link.onState = s => { buffer.push({ t: performance.now(), s }); if (buffer.length > 8) buffer.shift(); latest = s; };
@@ -160,8 +160,7 @@ function smooth(s) {
     return {
         ...B,
         ballX: lerp(A.ballX, B.ballX, t), ballY: lerp(A.ballY, B.ballY, t),
-        leftY: lerp(A.leftY, B.leftY, t), rightY: lerp(A.rightY, B.rightY, t),
-        leftH: lerp(A.leftH, B.leftH, t), rightH: lerp(A.rightH, B.rightH, t),
+        paddles: B.paddles.map((p, i) => A.paddles[i] ? { ...p, y: lerp(A.paddles[i].y, p.y, t), h: lerp(A.paddles[i].h, p.h, t) } : p),
     };
 }
 
@@ -186,7 +185,7 @@ function draw(raw, dt) {
     const bx = s.ballX + 7, by = s.ballY + 7;
 
     if (s.hitSeq !== last.hit) {
-        if (last.hit >= 0) { play("hit"); burst(bx, by, bx < W / 2 ? colorOf(0, s) : colorOf(1, s), 14, 220); }
+        burst(bx, by, teamColor(bx < W / 2 ? 0 : 1), 14, 220);
         last.hit = s.hitSeq;
     }
     if (s.scoreSeq !== last.score) {
@@ -240,8 +239,7 @@ function draw(raw, dt) {
     }
 
     // Paddles
-    paddle(20, s.leftY, s.leftH, 0, s);
-    paddle(W - 32, s.rightY, s.rightH, 1, s);
+    s.paddles.forEach((p, i) => paddle(p.x, p.y, p.h, p, i === localSide));
 
     // Power-up
     for (const pu of (s.powerUps || [])) {
@@ -308,7 +306,7 @@ function draw(raw, dt) {
     if (s.winner >= 0) {
         ctx.fillStyle = "rgba(5,8,20,0.7)";
         ctx.fillRect(0, 0, W, H);
-        const won = s.winner === localSide;
+        const won = s.winner === localSide % 2;
         glow(won ? C.me : C.them, 30);
         ctx.fillStyle = "#fff";
         ctx.font = "800 52px system-ui, sans-serif";
@@ -323,18 +321,15 @@ function draw(raw, dt) {
     ctx.restore();
 }
 
-function colorOf(i, s) {
-    if (i === 0 ? s.leftInverted : s.rightInverted) return C.inverted;
-    return i === localSide ? C.me : C.them;
-}
+function teamColor(team) { return team === localSide % 2 ? C.me : C.them; }
 
-function paddle(x, cy, h, i, s) {
-    const color = colorOf(i, s);
-    ctx.globalAlpha = 0.18; ctx.fillStyle = color;
+function paddle(x, cy, h, p, mine) {
+    const color = p.inverted ? C.inverted : teamColor(p.team);
+    ctx.globalAlpha = mine ? 0.3 : 0.18; ctx.fillStyle = color;
     roundRect(x - 6, cy - h / 2 - 6, 24, h + 12, 12); ctx.fill();
     ctx.globalAlpha = 1;
     const grad = ctx.createLinearGradient(x, 0, x + 12, 0);
-    grad.addColorStop
+    grad.addColorStop(0, color); grad.addColorStop(1, mine ? "#ffffff" : color);
     ctx.fillStyle = grad;
     roundRect(x, cy - h / 2, 12, h, 6);
     ctx.fill();

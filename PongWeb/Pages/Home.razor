@@ -9,9 +9,9 @@
 		<div class="game-bar">
 			<button class="btn icon" @onclick="Leave">← Stoppen</button>
 			<span class="versus">
-				<span class="@(_side == 0 ? "me" : "them")">@(_side == 0 ? _name : _opponent)</span>
+				<span class="@(_side % 2 == 0 ? "me" : "them")">@TeamLabel(0)</span>
 				<span class="vs">VS</span>
-				<span class="@(_side == 1 ? "me" : "them")">@(_side == 0 ? _opponent : _name)</span>
+				<span class="@(_side % 2 == 1 ? "me" : "them")">@TeamLabel(1)</span>
 			</span>
 			<button class="btn icon" @onclick="RestartGame">↻ Opnieuw</button>
 		</div>
@@ -39,15 +39,32 @@ else
 		{
 			<div class="card waiting">
 				<div class="radar"></div>
-				<p>Wachten op tegenstander...</p>
+				<p>Wachten op spelers... (@_lobbyPlayers.Count / @RemoteSlots().Count)</p>
+				@if (_lobbyPlayers.Count > 0)
+				{
+					<p class="muted small">@string.Join(", ", _lobbyPlayers)</p>
+				}
 				<button class="btn wide" @onclick="CancelHosting">Annuleren</button>
 			</div>
 		}
 		else
 		{
 			<div class="card">
-				<button class="btn primary wide" @onclick="Host">▶ Nieuw spel starten</button>
-				<button class="btn wide" @onclick="Practice">🤖 Oefenen tegen computer</button>
+				<h3>Spel</h3>
+				<div class="seg">
+					<button class="btn @(_teamSize == 1 ? "sel" : "")" @onclick="() => SetTeamSize(1)">1 tegen 1</button>
+					<button class="btn @(_teamSize == 2 ? "sel" : "")" @onclick="() => SetTeamSize(2)">2 tegen 2</button>
+				</div>
+				<label style="margin-top:.75rem">COMPUTERSPELERS</label>
+				<div class="seg">
+					@for (var n = 0; n <= MaxAi; n++)
+					{
+						var c = n;
+						<button class="btn @(_aiCount == c ? "sel" : "")" @onclick="() => SetAi(c)">@c</button>
+					}
+				</div>
+				<p class="muted small" style="margin:.5rem 0 .75rem">@SetupText()</p>
+				<button class="btn primary wide" @onclick="Start">▶ @(RemoteSlots().Count == 0 ? "Spelen" : "Nieuw spel starten")</button>
 			</div>
 
 			<div class="card">
@@ -95,6 +112,8 @@ else
 			</ul>
 			<ul class="powerups" style="grid-template-columns:1fr;margin-top:.5rem">
 				<li class="toggle @(_keep ? "on" : "off")" @onclick="ToggleKeep"><span class="pu-name">Power-ups blijven staan na een goal</span><span class="switch"></span></li>
+				<li><span class="pu-name">Muurtje: min. bounces</span><button class="btn icon" @onclick="() => SetWall(_wallMin - 1, _wallMax)">−</button><b style="min-width:1.5rem;text-align:center">@_wallMin</b><button class="btn icon" @onclick="() => SetWall(_wallMin + 1, _wallMax)">+</button></li>
+				<li><span class="pu-name">Muurtje: max. bounces</span><button class="btn icon" @onclick="() => SetWall(_wallMin, _wallMax - 1)">−</button><b style="min-width:1.5rem;text-align:center">@_wallMax</b><button class="btn icon" @onclick="() => SetWall(_wallMin, _wallMax + 1)">+</button></li>
 			</ul>
 			<p class="muted small" style="margin:.6rem 0 0">Max @PongEngine.MaxPickups power-ups tegelijk in het veld. Bij online spelen gelden de instellingen van wie het spel start.</p>
 		</div>
@@ -121,7 +140,6 @@ else
 	private bool _startCanvas;
 	private int _side;
 	private string _name = "";
-	private string? _opponent;
 	private string? _status;
 	private bool _hosting, _netReady;
 	private List<Peer> _peers = [];
@@ -141,11 +159,88 @@ else
 		await JS.InvokeVoidAsync("localStorage.setItem", "pongKeepPowerUps", _keep ? "1" : "0");
 	}
 
-	private PongEngine NewEngine() => new()
+	private PongEngine NewEngine()
 	{
-		KeepPowerUpsOnGoal = _keep,
-		EnabledPowerUps = Enumerable.Range(0, PowerUpRegistry.All.Count).Where(i => !_disabled.Contains(i)).ToArray()
-	};
+		var e = new PongEngine
+		{
+			TeamSize = _teamSize,
+			KeepPowerUpsOnGoal = _keep,
+			WallMinHits = _wallMin,
+			WallMaxHits = _wallMax,
+			EnabledPowerUps = Enumerable.Range(0, PowerUpRegistry.All.Count).Where(i => !_disabled.Contains(i)).ToArray(),
+			TeamNames = [TeamLabel(0), TeamLabel(1)],
+		};
+		foreach (var s in AiSlots()) e.Ai[s] = true;
+		e.Reset();
+		return e;
+	}
+
+	// --- Game setup ---
+	private int _teamSize = 1, _aiCount = 1, _wallMin = 3, _wallMax = 3;
+	private string[] _slotNames = new string[PongEngine.MaxSlots];
+	private List<string> _lobbyPlayers = [];
+	private int MaxAi => Math.Min(3, _teamSize * 2 - 1);
+
+	// Computers take the opponents' places first, then your teammate's.
+	private List<int> AiSlots() => (_teamSize == 1 ? new[] { 1 } : new[] { 1, 3, 2 }).Take(_aiCount).ToList();
+	private List<int> RemoteSlots() => Enumerable.Range(1, _teamSize * 2 - 1).Except(AiSlots()).ToList();
+
+	private string SetupText()
+	{
+		var r = RemoteSlots().Count;
+		return r == 0 ? "Alleen jij tegen de computer." : $"Je wacht op {r} andere speler{(r > 1 ? "s" : "")} op dit wifi-netwerk.";
+	}
+
+	private string TeamLabel(int team)
+	{
+		var names = Enumerable.Range(0, _teamSize * 2).Where(s => s % 2 == team).Select(s => _slotNames[s] ?? "?");
+		return string.Join(" & ", names);
+	}
+
+	private async Task SetTeamSize(int n)
+	{
+		_teamSize = n;
+		_aiCount = Math.Min(_aiCount, MaxAi);
+		await SaveSetup();
+	}
+
+	private async Task SetAi(int n)
+	{
+		_aiCount = n;
+		await SaveSetup();
+	}
+
+	private async Task SetWall(int min, int max)
+	{
+		min = Math.Clamp(min, 1, 10);
+		max = Math.Clamp(max, 1, 10);
+		if (min != _wallMin && min > max) max = min;
+		if (max != _wallMax && max < min) min = max;
+		_wallMin = min; _wallMax = max;
+		await SaveSetup();
+	}
+
+	private async Task SaveSetup() =>
+		await JS.InvokeVoidAsync("localStorage.setItem", "pongSetup", $"{_teamSize},{_aiCount},{_wallMin},{_wallMax}");
+
+	private async Task LoadSetup()
+	{
+		var v = await JS.InvokeAsync<string?>("localStorage.getItem", "pongSetup");
+		var p = (v ?? "").Split(',').Select(x => int.TryParse(x, out var n) ? n : 0).ToArray();
+		if (p.Length != 4) return;
+		_teamSize = Math.Clamp(p[0], 1, 2);
+		_aiCount = Math.Clamp(p[1], 0, MaxAi);
+		_wallMin = Math.Clamp(p[2], 1, 10);
+		_wallMax = Math.Clamp(p[3], _wallMin, 10);
+	}
+
+	private void FillSlotNames()
+	{
+		_slotNames = new string[PongEngine.MaxSlots];
+		_slotNames[0] = _name;
+		var i = 1;
+		foreach (var s in AiSlots()) _slotNames[s] = AiSlots().Count > 1 ? $"Computer {i++}" : "Computer";
+	}
 
 	protected override async Task OnAfterRenderAsync(bool firstRender)
 	{
@@ -157,6 +252,7 @@ else
 			if (!string.IsNullOrEmpty(dis))
 				_disabled = dis.Split(',').Select(x => int.TryParse(x, out var n) ? n : -1).Where(n => n >= 0).ToHashSet();
 			_keep = await JS.InvokeAsync<string?>("localStorage.getItem", "pongKeepPowerUps") == "1";
+			await LoadSetup();
 			_pong = await JS.InvokeAsync<IJSObjectReference>("import", "./js/pong.js");
 			_net = await JS.InvokeAsync<IJSObjectReference>("import", "./js/net.js");
 			StateHasChanged();
@@ -189,25 +285,27 @@ else
 		if (_netReady) await _net!.InvokeVoidAsync("setName", _name);
 	}
 
-	private void Practice()
+	private async Task Start()
 	{
-		_engine = NewEngine();
-		_engine.AiRight = true;
-		BeginGame("practice", 0, "Computer");
-	}
-
-	private async Task Host()
-	{
+		FillSlotNames();
+		if (RemoteSlots().Count == 0)
+		{
+			_engine = NewEngine();
+			BeginGame("practice", 0);
+			return;
+		}
 		if (!_netReady) return;
 		_status = null;
 		_hosting = true;
-		await _net!.InvokeVoidAsync("setHosting", true);
+		_lobbyPlayers = [];
+		var known = Enumerable.Range(0, PongEngine.MaxSlots).Where(s => _slotNames[s] is not null).Select(s => new SlotName(s, _slotNames[s])).ToList();
+		await _net!.InvokeVoidAsync("setHosting", true, RemoteSlots(), known);
 	}
 
 	private async Task CancelHosting()
 	{
 		_hosting = false;
-		await _net!.InvokeVoidAsync("setHosting", false);
+		await _net!.InvokeVoidAsync("setHosting", false, Array.Empty<int>());
 	}
 
 	private async Task Join(string peerId)
@@ -216,11 +314,10 @@ else
 		await _net!.InvokeVoidAsync("join", peerId);
 	}
 
-	private void BeginGame(string mode, int side, string? opponent)
+	private void BeginGame(string mode, int side)
 	{
 		_mode = mode;
 		_side = side;
-		_opponent = opponent;
 		_status = null;
 		_hosting = false;
 		_startCanvas = true;
@@ -255,11 +352,41 @@ else
 		StateHasChanged();
 	}
 
+	public record SlotName(int Slot, string Name);
+
 	[JSInvokable]
-	public void OnGameStart(int side, string opponent)
+	public void OnLobbyPlayers(List<string> names)
 	{
-		_engine = side == 0 ? NewEngine() : null;
-		BeginGame(side == 0 ? "host" : "client", side, opponent);
+		_lobbyPlayers = names;
+		StateHasChanged();
+	}
+
+	[JSInvokable]
+	public void OnGameStart(int slot, List<SlotName> remote)
+	{
+		if (slot == 0)
+		{
+			foreach (var r in remote) _slotNames[r.Slot] = r.Name;
+			_engine = NewEngine();
+		}
+		else
+		{
+			// Client: the snapshot tells us the team size; names come from the host.
+			_slotNames = new string[PongEngine.MaxSlots];
+			foreach (var r in remote) _slotNames[r.Slot] = r.Name;
+			_teamSize = remote.Count > 2 ? 2 : 1;
+			_engine = null;
+		}
+		BeginGame(slot == 0 ? "host" : "client", slot);
+		StateHasChanged();
+	}
+
+	[JSInvokable]
+	public void OnPlayerLeft(int slot, string name)
+	{
+		if (_engine is null) return;
+		_engine.Ai[slot] = true;
+		_slotNames[slot] = $"{name} (computer)";
 		StateHasChanged();
 	}
 
@@ -287,7 +414,7 @@ else
 
 
 	[JSInvokable]
-	public void SetTarget(int side, float? y) => _engine?.SetTarget((Side)side, y);
+	public void SetTarget(int side, float? y) => _engine?.SetTarget(side, y);
 
 	[JSInvokable]
 	public void Restart() => _engine?.Reset();

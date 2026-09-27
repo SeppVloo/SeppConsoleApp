@@ -115,6 +115,10 @@ html, body {
     justify-content: space-between;
 }
 .btn.icon { padding: .55rem .8rem; border-radius: 999px; font-size: .9rem; }
+.seg { display: flex; gap: .4rem; }
+.seg .btn { flex: 1; padding: .6rem .5rem; }
+.seg .btn.sel { background: linear-gradient(90deg, var(--cyan), #818cf8); color: #0b1026; border-color: transparent; }
+.powerups li .btn.icon { padding: .2rem .6rem; }
 
 .status {
     background: #22d3ee1a;

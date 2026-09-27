@@ -12,12 +12,8 @@ public sealed class GameState
 
     public float BallX { get; set; }
     public float BallY { get; set; }
-    public float LeftY { get; set; }
-    public float RightY { get; set; }
-    public float LeftH { get; set; }
-    public float RightH { get; set; }
-    public bool LeftInverted { get; set; }
-    public bool RightInverted { get; set; }
+    public PaddleInfo[] Paddles { get; set; } = [];
+    public int TeamSize { get; set; } = 1;
     public float BallSpeedFactor { get; set; } = 1f;
     public int LeftScore { get; set; }
     public int RightScore { get; set; }
@@ -31,6 +27,15 @@ public sealed class GameState
     public string PowerText { get; set; } = "";
     public WallInfo[] Walls { get; set; } = [];
     public int WallSeq { get; set; }
+}
+
+public struct PaddleInfo
+{
+    public float X { get; set; }
+    public float Y { get; set; }
+    public float H { get; set; }
+    public int Team { get; set; }
+    public bool Inverted { get; set; }
 }
 
 public struct PickupInfo
