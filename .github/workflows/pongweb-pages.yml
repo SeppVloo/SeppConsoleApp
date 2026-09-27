@@ -31,6 +31,21 @@ jobs:
       - name: Set base href
         run: sed -i 's|<base href="/" />|<base href="/${{ github.event.repository.name }}/" />|' out/wwwroot/index.html
 
+      # index.html changed, so its integrity hash in the service-worker manifest must be recomputed.
+      - name: Fix service worker hash
+        run: |
+          python3 - <<'EOF'
+          import base64, hashlib, re
+          root = "out/wwwroot/"
+          h = "sha256-" + base64.b64encode(hashlib.sha256(open(root + "index.html", "rb").read()).digest()).decode()
+          p = root + "service-worker-assets.js"
+          s = open(p, encoding="utf-8").read()
+          s, n = re.subn(r'"hash":\s*"[^"]*",(\s*)"url":\s*"index.html"', lambda m: f'"hash": "{h}",{m.group(1)}"url": "index.html"', s)
+          print("updated entries:", n)
+          open(p, "w", encoding="utf-8").write(s)
+          EOF
+          rm -f out/wwwroot/index.html.br out/wwwroot/index.html.gz
+
       - name: Pages extras
         run: |
           touch out/wwwroot/.nojekyll
