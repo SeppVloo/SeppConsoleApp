@@ -28,6 +28,7 @@ public sealed class GameState
     public WallInfo[] Walls { get; set; } = [];
     public int WallSeq { get; set; }
     public int BumpSeq { get; set; }
+    public bool Paused { get; set; }
 }
 
 public struct PaddleInfo
@@ -54,4 +55,7 @@ public struct WallInfo
     public float H { get; set; }
     public int Hp { get; set; }
     public int MaxHp { get; set; }
+    /// <summary>Rotation in radians (0 = upright).</summary>
+    public float Angle { get; set; }
+    public float Spin { get; set; }
 }

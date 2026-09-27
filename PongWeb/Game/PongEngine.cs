@@ -19,6 +19,7 @@ public sealed class PongEngine
     public const int MaxSlots = 4;
 
     public int MaxScore { get; set; } = 7;
+    public bool Paused { get; set; }
 
     /// <summary>1 = 1 tegen 1, 2 = 2 tegen 2.</summary>
     public int TeamSize { get; set; } = 1;
@@ -104,7 +105,7 @@ public sealed class PongEngine
 
     public void Tick(float dt)
     {
-        if (_winner >= 0) return;
+        if (_winner >= 0 || Paused) return;
 
         for (int i = _effects.Count - 1; i >= 0; i--)
         {
@@ -137,6 +138,7 @@ public sealed class PongEngine
         if (_by < 0) { _by = 0; _vy = Math.Abs(_vy); }
         else if (_by + GameState.BallSize > H) { _by = H - GameState.BallSize; _vy = -Math.Abs(_vy); }
 
+        RotateWalls(dt);
         for (int i = _walls.Count - 1; i >= 0; i--) HitWall(i);
 
         for (int p = 0; p < PaddleCount; p++)
@@ -170,7 +172,7 @@ public sealed class PongEngine
             Winner = _winner, Serving = _serveTimer > 0,
             HitSeq = _hitSeq, ScoreSeq = _scoreSeq, PowerSeq = _powerSeq,
             PowerText = _powerText,
-            Walls = _walls.ToArray(), WallSeq = _wallSeq, BumpSeq = BumpSeq,
+            BumpSeq = BumpSeq, Paused = Paused,
         };
     }
 
@@ -199,36 +201,54 @@ public sealed class PongEngine
         _walls.Add(new WallInfo { Side = (int)picker, X = x, Y = y, H = wh, Hp = hp, MaxHp = hp });
     }
 
-    // Swept test against the previous position, so a fast ball can never pass through.
-    // Every hit bounces the ball and costs one hit point; the wall is removed only after that bounce.
+    // Walls are rotated rectangles. The test runs in the wall's own frame and uses the previous ball position,
+    // so a fast ball can never slip through. Every hit bounces the ball, spins the wall and costs one hit point.
     private void HitWall(int index)
     {
         var w = _walls[index];
-        const float b = GameState.BallSize;
-        bool hit = false;
+        const float r = GameState.BallSize / 2;
+        const float hw = WallWidth / 2;
+        float hh = w.H / 2;
+        float cx = w.X + hw, cy = w.Y + hh;
+        float nx = MathF.Cos(w.Angle), ny = MathF.Sin(w.Angle);   // normal (points right when upright)
+        float tx = -ny, ty = nx;                                   // along the wall (points down when upright)
 
-        if (_vx > 0 && _prevBx + b <= w.X && _bx + b >= w.X)
-        {
-            float t = (w.X - (_prevBx + b)) / (_bx - _prevBx);
-            float y = _prevBy + (_by - _prevBy) * t;
-            if (y + b > w.Y && y < w.Y + w.H) { _bx = w.X - b; _by = y; _vx = -Math.Abs(_vx); Deflect(w, -1); hit = true; }
-        }
-        else if (_vx < 0 && _prevBx >= w.X + WallWidth && _bx <= w.X + WallWidth)
-        {
-            float t = (_prevBx - (w.X + WallWidth)) / (_prevBx - _bx);
-            float y = _prevBy + (_by - _prevBy) * t;
-            if (y + b > w.Y && y < w.Y + w.H) { _bx = w.X + WallWidth; _by = y; _vx = Math.Abs(_vx); Deflect(w, 1); hit = true; }
-        }
+        float px = _bx + r - cx, py = _by + r - cy;
+        float ln = px * nx + py * ny, lt = px * tx + py * ty;
+        float qx = _prevBx + r - cx, qy = _prevBy + r - cy;
+        float ln0 = qx * nx + qy * ny;
 
-        // Top/bottom edge or any remaining overlap: push out vertically.
-        if (!hit && _bx + b > w.X && _bx < w.X + WallWidth && _by + b > w.Y && _by < w.Y + w.H)
-        {
-            if (_by + b / 2 < w.Y + w.H / 2) { _by = w.Y - b; _vy = -Math.Abs(_vy); }
-            else { _by = w.Y + w.H; _vy = Math.Abs(_vy); }
-            hit = true;
-        }
+        if (MathF.Abs(lt) > hh + r) return;
+        bool crossed = MathF.Sign(ln0) != MathF.Sign(ln) && MathF.Abs(ln0) >= hw;
+        if (!crossed && MathF.Abs(ln) >= hw + r) return;
 
-        if (!hit) return;
+        float side = MathF.Abs(ln0) > 0.001f ? MathF.Sign(ln0) : -MathF.Sign(_vx * nx + _vy * ny);
+        if (side == 0) side = 1;
+        lt = Math.Clamp(lt, -hh, hh);
+
+        // Put the ball just outside the face it came from.
+        float ox = cx + nx * side * (hw + r) + tx * lt, oy = cy + ny * side * (hw + r) + ty * lt;
+        _bx = ox - r; _by = oy - r;
+
+        float vn = _vx * nx + _vy * ny;
+        if (vn * side >= 0) return; // already moving away
+
+        // Outgoing angle relative to the face normal; near the ends the ball is turned away from the centre.
+        float speed = MathF.Sqrt(_vx * _vx + _vy * _vy);
+        float vt = _vx * tx + _vy * ty;
+        float rel = lt / hh;
+        float edge = MathF.Max(0, (MathF.Abs(rel) - 0.33f) / 0.67f);
+        float ang = MathF.Atan2(vt, MathF.Abs(vn)) + MathF.Sign(rel) * edge * 30f * MathF.PI / 180f;
+        float max = 60f * MathF.PI / 180f;
+        ang = Math.Clamp(ang, -max, max);
+        float ca = MathF.Cos(ang) * speed, sa = MathF.Sin(ang) * speed;
+        _vx = nx * side * ca + tx * sa;
+        _vy = ny * side * ca + ty * sa;
+
+        // Spin: the end that gets hit is pushed away from the ball, so the wall turns forward or backward.
+        w.Spin += rel * side * MathF.Abs(vn) * WallSpinFactor;
+        w.Spin = Math.Clamp(w.Spin, -MaxWallSpin, MaxWallSpin);
+
         _hitSeq++;
         _wallSeq++;
         w.Hp--;
@@ -236,19 +256,21 @@ public sealed class PongEngine
         else _walls[index] = w;
     }
 
-    // Near the ends of a wall the ball is turned away from the centre, stronger the closer to the edge.
-    // Hits in the middle third bounce straight as before.
-    private void Deflect(WallInfo w, float dirX)
+    private const float WallSpinFactor = 0.012f;
+    private const float MaxWallSpin = 9f;
+
+    private void RotateWalls(float dt)
     {
-        float rel = Math.Clamp((_by + GameState.BallSize / 2 - (w.Y + w.H / 2)) / (w.H / 2), -1f, 1f);
-        float edge = (MathF.Abs(rel) - 0.33f) / 0.67f;
-        if (edge <= 0) return;
-        float speed = MathF.Sqrt(_vx * _vx + _vy * _vy);
-        float angle = MathF.Atan2(_vy, MathF.Abs(_vx)) + MathF.Sign(rel) * edge * 30f * MathF.PI / 180f;
-        float max = 60f * MathF.PI / 180f;
-        angle = Math.Clamp(angle, -max, max);
-        _vx = MathF.Cos(angle) * speed * dirX;
-        _vy = MathF.Sin(angle) * speed;
+        float damp = MathF.Pow(0.35f, dt);
+        for (int i = 0; i < _walls.Count; i++)
+        {
+            var w = _walls[i];
+            if (w.Spin == 0) continue;
+            w.Angle += w.Spin * dt;
+            w.Spin *= damp;
+            if (MathF.Abs(w.Spin) < 0.02f) w.Spin = 0;
+            _walls[i] = w;
+        }
     }
 
     private void Serve(bool toRight)

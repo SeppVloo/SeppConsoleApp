@@ -13,7 +13,10 @@
 				<span class="vs">VS</span>
 				<span class="@(_side % 2 == 1 ? "me" : "them")">@TeamLabel(1)</span>
 			</span>
-			<button class="btn icon" @onclick="RestartGame">↻ Opnieuw</button>
+			<span style="display:flex;gap:.4rem">
+				<button class="btn icon" @onclick="TogglePauseClick">⏯ Pauze</button>
+				<button class="btn icon" @onclick="RestartGame">↻ Opnieuw</button>
+			</span>
 		</div>
 		<canvas @ref="_canvas" width="800" height="450" class="pong-canvas"></canvas>
 		<div class="hint">Sleep met je vinger over het veld om je batje te bewegen</div>
@@ -363,6 +366,17 @@ else
 		if (_mode is "host" or "client") await _net!.InvokeVoidAsync("leave");
 		_mode = null;
 		_engine = null;
+	}
+
+	private async Task TogglePauseClick()
+	{
+		if (_pong is not null) await _pong.InvokeVoidAsync("togglePause");
+	}
+
+	[JSInvokable]
+	public void TogglePause()
+	{
+		if (_engine is not null) _engine.Paused = !_engine.Paused;
 	}
 
 	private async Task RestartGame()

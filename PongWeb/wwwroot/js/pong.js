@@ -41,7 +41,7 @@ export function start(el, dotnetRef, gameMode, side, powerUpInfo) {
 
     if (mode === "host") {
         link.onInput = (slot, y) => dotnet.invokeMethod("SetTarget", slot, y);
-        link.onCmd = m => { if (m.type === "restart") dotnet.invokeMethod("Restart"); };
+        link.onCmd = m => { if (m.type === "restart") dotnet.invokeMethod("Restart"); else if (m.type === "pause") dotnet.invokeMethod("TogglePause"); };
     } else if (mode === "client") {
         link.onState = s => { buffer.push({ t: performance.now(), s }); if (buffer.length > 8) buffer.shift(); latest = s; };
     }
@@ -54,6 +54,11 @@ export function stop() {
     raf = 0;
     resizeObs?.disconnect(); resizeObs = null;
     link.onState = link.onInput = link.onCmd = null;
+}
+
+export function togglePause() {
+    if (mode === "client") link.sendCmd({ type: "pause" });
+    else dotnet.invokeMethod("TogglePause");
 }
 
 export function restart() {
@@ -224,14 +229,17 @@ function draw(raw, dt) {
     // Wall
     for (const w of (s.walls || [])) {
         const hp = w.hp / w.maxHp;
+        ctx.save();
+        ctx.translate(w.x + 6, w.y + w.h / 2);
+        ctx.rotate(w.angle || 0);
         ctx.globalAlpha = 0.2; ctx.fillStyle = "#38bdf8";
-        roundRect(w.x - 6, w.y - 6, 24, w.h + 12, 10); ctx.fill();
+        roundRect(-12, -w.h / 2 - 6, 24, w.h + 12, 10); ctx.fill();
         ctx.globalAlpha = 0.35 + hp * 0.65;
-        ctx.fillStyle = "#38bdf8";
-        roundRect(w.x, w.y, 12, w.h, 5); ctx.fill();
+        roundRect(-6, -w.h / 2, 12, w.h, 5); ctx.fill();
         ctx.globalAlpha = 1;
         ctx.fillStyle = "rgba(11,16,38,0.8)";
-        for (let k = 1; k < w.maxHp; k++) ctx.fillRect(w.x, w.y + w.h * k / w.maxHp - 1, 12, 2);
+        for (let k = 1; k < w.maxHp; k++) ctx.fillRect(-6, -w.h / 2 + w.h * k / w.maxHp - 1, 12, 2);
+        ctx.restore();
     }
     if (s.bumpSeq !== last.bump) {
         if (last.bump !== undefined) { play("hit"); shake = Math.max(shake, 6); navigator.vibrate?.(30); }
@@ -304,6 +312,18 @@ function draw(raw, dt) {
         ctx.fillStyle = "#fde047";
         ctx.fillText("⚡ " + powerFlash.text, W / 2, H - 40);
         ctx.globalAlpha = 1;
+    }
+
+    // Pause overlay
+    if (s.paused && s.winner < 0) {
+        ctx.fillStyle = "rgba(5,8,20,0.6)";
+        ctx.fillRect(0, 0, W, H);
+        ctx.fillStyle = "#fff";
+        ctx.font = "800 48px system-ui, sans-serif";
+        ctx.fillText("⏸ Pauze", W / 2, H / 2 - 10);
+        ctx.font = "500 18px system-ui, sans-serif";
+        ctx.fillStyle = "rgba(255,255,255,0.7)";
+        ctx.fillText("tik op ▶ om verder te spelen", W / 2, H / 2 + 30);
     }
 
     // Winner overlay
