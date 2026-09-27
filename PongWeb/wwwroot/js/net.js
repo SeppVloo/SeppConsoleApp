@@ -2,19 +2,11 @@
 // Players on the same Wi-Fi share one public IP, so they join the same Trystero room automatically.
 // Trystero only uses free public signalling relays to set up a direct WebRTC connection;
 // game data then flows directly between the devices.
-import { joinRoom, selfId, getRelaySockets } from "https://esm.sh/trystero@0.21";
+// MQTT strategy: signalling via big public MQTT brokers (EMQX, HiveMQ, Mosquitto). These are far more
+// reliable than Nostr relays, which often rate-limit or require a whitelist.
+import { joinRoom, selfId, getRelaySockets } from "https://esm.sh/trystero@0.21.8/mqtt";
 
 const APP_ID = "sepp-pong-v1";
-
-// Fixed relay list so every device meets on the same relays (Trystero's defaults include
-// relays that are often down or rate-limit). A few failing is fine as long as one works.
-const RELAYS = [
-    "wss://relay.primal.net",
-    "wss://nostr.mom",
-    "wss://offchain.pub",
-    "wss://nostr-pub.wellorder.net",
-    "wss://relay.damus.io",
-];
 
 let room, dotnet, me = { name: "", hosting: false, busy: false };
 const peers = new Map(); // peerId -> { name, hosting, busy }
@@ -28,7 +20,7 @@ function pushDiag() {
     try {
         const sockets = Object.values(getRelaySockets?.() ?? {});
         diag.relaysTotal = sockets.length;
-        diag.relays = sockets.filter(s => s.readyState === 1).length;
+        diag.relays = sockets.filter(s => s.readyState === 1 || s.connected === true).length;
     } catch { }
     diag.peers = room ? Object.keys(room.getPeers()).length : 0;
     dotnet?.invokeMethodAsync("OnDiag", { ...diag });
@@ -56,7 +48,7 @@ function announce(to) { sendHello?.({ name: me.name, hosting: me.hosting, busy: 
 export async function start(dotnetRef, name) {
     dotnet = dotnetRef;
     me.name = name;
-    room = joinRoom({ appId: APP_ID, relayUrls: RELAYS, relayRedundancy: RELAYS.length }, diag.room = await roomName());
+    room = joinRoom({ appId: APP_ID }, diag.room = await roomName());
     setInterval(pushDiag, 2000);
     pushDiag();
 
