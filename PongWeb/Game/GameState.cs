@@ -22,21 +22,30 @@ public sealed class GameState
     public int LeftScore { get; set; }
     public int RightScore { get; set; }
     public int MaxScore { get; set; }
-    public bool HasPowerUp { get; set; }
-    public float PowerUpX { get; set; }
-    public float PowerUpY { get; set; }
-    public byte PowerUpType { get; set; }
+    public PickupInfo[] PowerUps { get; set; } = [];
     public int Winner { get; set; } = -1;
     public bool Serving { get; set; }
     public int HitSeq { get; set; }
     public int ScoreSeq { get; set; }
     public int PowerSeq { get; set; }
     public string PowerText { get; set; } = "";
-    public bool HasWall { get; set; }
-    public float WallX { get; set; }
-    public float WallY { get; set; }
-    public float WallH { get; set; }
-    public int WallHp { get; set; }
-    public int WallMaxHp { get; set; }
+    public WallInfo[] Walls { get; set; } = [];
     public int WallSeq { get; set; }
+}
+
+public struct PickupInfo
+{
+    public float X { get; set; }
+    public float Y { get; set; }
+    public int Type { get; set; }
+}
+
+public struct WallInfo
+{
+    public int Side { get; set; }
+    public float X { get; set; }
+    public float Y { get; set; }
+    public float H { get; set; }
+    public int Hp { get; set; }
+    public int MaxHp { get; set; }
 }

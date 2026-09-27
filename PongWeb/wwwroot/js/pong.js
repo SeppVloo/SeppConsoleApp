@@ -223,19 +223,19 @@ function draw(raw, dt) {
     });
 
     // Wall
-    if (s.hasWall) {
-        const hp = s.wallHp / s.wallMaxHp;
+    for (const w of (s.walls || [])) {
+        const hp = w.hp / w.maxHp;
         ctx.globalAlpha = 0.2; ctx.fillStyle = "#38bdf8";
-        roundRect(s.wallX - 6, s.wallY - 6, 24, s.wallH + 12, 10); ctx.fill();
+        roundRect(w.x - 6, w.y - 6, 24, w.h + 12, 10); ctx.fill();
         ctx.globalAlpha = 0.35 + hp * 0.65;
         ctx.fillStyle = "#38bdf8";
-        roundRect(s.wallX, s.wallY, 12, s.wallH, 5); ctx.fill();
+        roundRect(w.x, w.y, 12, w.h, 5); ctx.fill();
         ctx.globalAlpha = 1;
         ctx.fillStyle = "rgba(11,16,38,0.8)";
-        for (let k = 1; k < s.wallMaxHp; k++) ctx.fillRect(s.wallX, s.wallY + s.wallH * k / s.wallMaxHp - 1, 12, 2);
+        for (let k = 1; k < w.maxHp; k++) ctx.fillRect(w.x, w.y + w.h * k / w.maxHp - 1, 12, 2);
     }
     if (s.wallSeq !== last.wall) {
-        if (last.wall >= 0) burst(s.wallX + 6, by, "#38bdf8", 12, 200);
+        if (last.wall >= 0) burst(bx, by, "#38bdf8", 12, 200);
         last.wall = s.wallSeq;
     }
 
@@ -244,9 +244,9 @@ function draw(raw, dt) {
     paddle(W - 32, s.rightY, s.rightH, 1, s);
 
     // Power-up
-    if (s.hasPowerUp) {
-        const info = powerUps[s.powerUpType] || { color: "#fff", symbol: "?" };
-        const cx = s.powerUpX + 15, cy = s.powerUpY + 15;
+    for (const pu of (s.powerUps || [])) {
+        const info = powerUps[pu.type] || { color: "#fff", symbol: "?" };
+        const cx = pu.x + 15, cy = pu.y + 15;
         const pulse = 1 + Math.sin(now / 180) * 0.1;
         ctx.save();
         ctx.translate(cx, cy);

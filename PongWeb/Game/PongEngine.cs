@@ -20,13 +20,17 @@ public sealed class PongEngine
     /// <summary>Indices into <see cref="PowerUpRegistry.All"/> that may spawn. Empty = no power-ups.</summary>
     public IReadOnlyList<int> EnabledPowerUps { get; set; } = Enumerable.Range(0, PowerUpRegistry.All.Count).ToArray();
 
+    /// <summary>If true, power-ups on the field, active effects and walls survive a goal.</summary>
+    public bool KeepPowerUpsOnGoal { get; set; }
+
+    public const int MaxPickups = 3;
     public const float WallWidth = 12f;
     public const float WallHeight = 110f;
     public const int WallHits = 3;
-    private bool _hasWall;
-    private float _wx, _wy;
-    private int _wallHp;
+    private readonly List<WallInfo> _walls = new();
+    private readonly List<PickupInfo> _pickups = new();
     private int _wallSeq;
+    private float _prevBx, _prevBy;
 
     private readonly Random _rng = new();
     private readonly Modifiers _mods = new();
@@ -41,11 +45,7 @@ public sealed class PongEngine
     private float _serveTimer;
     private int _winner = -1;
 
-    private bool _hasPowerUp;
-    private float _pux, _puy;
-    private int _puType;
     private float _spawnTimer = SpawnInterval;
-
     private int _hitSeq, _scoreSeq, _powerSeq;
     private string _powerText = "";
 
@@ -57,8 +57,8 @@ public sealed class PongEngine
         _effects.Clear();
         _mods.Reset();
         _winner = -1;
-        _hasPowerUp = false;
-        _hasWall = false;
+        _pickups.Clear();
+        _walls.Clear();
         _spawnTimer = SpawnInterval;
         _py[0] = _py[1] = H / 2;
         Serve(toRight: _rng.Next(2) == 0);
@@ -91,13 +91,14 @@ public sealed class PongEngine
         }
 
         float f = _mods.BallSpeedFactor;
+        _prevBx = _bx; _prevBy = _by;
         _bx += _vx * f * dt;
         _by += _vy * f * dt;
 
         if (_by < 0) { _by = 0; _vy = Math.Abs(_vy); }
         else if (_by + GameState.BallSize > H) { _by = H - GameState.BallSize; _vy = -Math.Abs(_vy); }
 
-        if (_hasWall) HitWall();
+        for (int i = _walls.Count - 1; i >= 0; i--) HitWall(i);
 
         float lx = GameState.PaddleMargin;
         if (_vx < 0 && _bx <= lx + GameState.PaddleWidth && _bx + GameState.BallSize >= lx && OverlapsPaddle(0))
@@ -121,46 +122,61 @@ public sealed class PongEngine
         LeftInverted = _mods.Inverted[0], RightInverted = _mods.Inverted[1],
         BallSpeedFactor = _mods.BallSpeedFactor,
         LeftScore = _score[0], RightScore = _score[1], MaxScore = MaxScore,
-        HasPowerUp = _hasPowerUp, PowerUpX = _pux, PowerUpY = _puy, PowerUpType = (byte)_puType,
+        PowerUps = _pickups.ToArray(),
         Winner = _winner, Serving = _serveTimer > 0,
         HitSeq = _hitSeq, ScoreSeq = _scoreSeq, PowerSeq = _powerSeq,
         PowerText = _powerText,
-        HasWall = _hasWall, WallX = _wx, WallY = _wy, WallH = WallHeight,
-        WallHp = _wallHp, WallMaxHp = WallHits, WallSeq = _wallSeq,
+        Walls = _walls.ToArray(), WallSeq = _wallSeq,
     };
 
-    /// <summary>Places a wall in front of the picker's goal. Picking another one refreshes it.</summary>
+    /// <summary>Places a wall in front of the picker's goal (one per side). Picking another one refreshes it.</summary>
     public void SpawnWall(Side picker)
     {
-        _wx = picker == Side.Left ? W * 0.22f : W * 0.78f - WallWidth;
-        _wy = (float)(40 + _rng.NextDouble() * (H - 80 - WallHeight));
-        _wallHp = WallHits;
-        _hasWall = true;
+        _walls.RemoveAll(w => w.Side == (int)picker);
+        _walls.Add(new WallInfo
+        {
+            Side = (int)picker,
+            X = picker == Side.Left ? W * 0.22f : W * 0.78f - WallWidth,
+            Y = (float)(40 + _rng.NextDouble() * (H - 80 - WallHeight)),
+            H = WallHeight, Hp = WallHits, MaxHp = WallHits,
+        });
     }
 
-    // Every contact always costs one hit point; at 0 the wall is gone. Ball is pushed out so it can't hit twice.
-    private void HitWall()
+    // Swept test against the previous position, so a fast ball can never pass through.
+    // Every hit bounces the ball and costs one hit point; the wall is removed only after that bounce.
+    private void HitWall(int index)
     {
+        var w = _walls[index];
         const float b = GameState.BallSize;
-        if (_bx + b <= _wx || _bx >= _wx + WallWidth || _by + b <= _wy || _by >= _wy + WallHeight) return;
+        bool hit = false;
 
-        float penLeft = _bx + b - _wx, penRight = _wx + WallWidth - _bx;
-        float penTop = _by + b - _wy, penBottom = _wy + WallHeight - _by;
-        float minX = MathF.Min(penLeft, penRight), minY = MathF.Min(penTop, penBottom);
-        if (minX <= minY)
+        if (_vx > 0 && _prevBx + b <= w.X && _bx + b >= w.X)
         {
-            if (penLeft < penRight) { _bx = _wx - b; _vx = -Math.Abs(_vx); }
-            else { _bx = _wx + WallWidth; _vx = Math.Abs(_vx); }
+            float t = (w.X - (_prevBx + b)) / (_bx - _prevBx);
+            float y = _prevBy + (_by - _prevBy) * t;
+            if (y + b > w.Y && y < w.Y + w.H) { _bx = w.X - b; _by = y; _vx = -Math.Abs(_vx); hit = true; }
         }
-        else
+        else if (_vx < 0 && _prevBx >= w.X + WallWidth && _bx <= w.X + WallWidth)
         {
-            if (penTop < penBottom) { _by = _wy - b; _vy = -Math.Abs(_vy); }
-            else { _by = _wy + WallHeight; _vy = Math.Abs(_vy); }
+            float t = (_prevBx - (w.X + WallWidth)) / (_prevBx - _bx);
+            float y = _prevBy + (_by - _prevBy) * t;
+            if (y + b > w.Y && y < w.Y + w.H) { _bx = w.X + WallWidth; _by = y; _vx = Math.Abs(_vx); hit = true; }
         }
 
+        // Top/bottom edge or any remaining overlap: push out vertically.
+        if (!hit && _bx + b > w.X && _bx < w.X + WallWidth && _by + b > w.Y && _by < w.Y + w.H)
+        {
+            if (_by + b / 2 < w.Y + w.H / 2) { _by = w.Y - b; _vy = -Math.Abs(_vy); }
+            else { _by = w.Y + w.H; _vy = Math.Abs(_vy); }
+            hit = true;
+        }
+
+        if (!hit) return;
         _hitSeq++;
         _wallSeq++;
-        if (--_wallHp <= 0) _hasWall = false;
+        w.Hp--;
+        if (w.Hp <= 0) _walls.RemoveAt(index);
+        else _walls[index] = w;
     }
 
     private void Serve(bool toRight)
@@ -216,40 +232,50 @@ public sealed class PongEngine
 
     private void UpdatePowerUps(float dt)
     {
-        if (!_hasPowerUp)
+        if (_pickups.Count < MaxPickups && EnabledPowerUps.Count > 0)
         {
             _spawnTimer -= dt;
-            if (_spawnTimer <= 0 && EnabledPowerUps.Count > 0)
+            if (_spawnTimer <= 0)
             {
-                _puType = EnabledPowerUps[_rng.Next(EnabledPowerUps.Count)];
-                _pux = (float)(W * 0.3 + _rng.NextDouble() * (W * 0.4 - GameState.PowerUpSize));
-                _puy = (float)(40 + _rng.NextDouble() * (H - 80 - GameState.PowerUpSize));
-                _hasPowerUp = true;
+                _spawnTimer = SpawnInterval;
+                for (int attempt = 0; attempt < 10; attempt++)
+                {
+                    float x = (float)(W * 0.3 + _rng.NextDouble() * (W * 0.4 - GameState.PowerUpSize));
+                    float y = (float)(40 + _rng.NextDouble() * (H - 80 - GameState.PowerUpSize));
+                    if (_pickups.Any(p => MathF.Abs(p.X - x) < 50 && MathF.Abs(p.Y - y) < 50)) continue;
+                    _pickups.Add(new PickupInfo { X = x, Y = y, Type = EnabledPowerUps[_rng.Next(EnabledPowerUps.Count)] });
+                    break;
+                }
             }
-            return;
         }
 
-        bool hit = _bx < _pux + GameState.PowerUpSize && _bx + GameState.BallSize > _pux &&
-                   _by < _puy + GameState.PowerUpSize && _by + GameState.BallSize > _puy;
-        if (!hit) return;
+        for (int i = _pickups.Count - 1; i >= 0; i--)
+        {
+            var p = _pickups[i];
+            bool hit = _bx < p.X + GameState.PowerUpSize && _bx + GameState.BallSize > p.X &&
+                       _by < p.Y + GameState.PowerUpSize && _by + GameState.BallSize > p.Y;
+            if (!hit) continue;
 
-        var def = PowerUpRegistry.All[_puType];
-        if (def.DurationSec > 0) _effects.Add((def, _lastHit, def.DurationSec));
-        def.Activate(this, _lastHit);
-        _hasPowerUp = false;
-        _spawnTimer = SpawnInterval;
-        _powerSeq++;
-        _powerText = $"{(_lastHit == Side.Left ? "Links" : "Rechts")}: {def.Name}";
+            _pickups.RemoveAt(i);
+            var def = PowerUpRegistry.All[p.Type];
+            if (def.DurationSec > 0) _effects.Add((def, _lastHit, def.DurationSec));
+            def.Activate(this, _lastHit);
+            _powerSeq++;
+            _powerText = $"{(_lastHit == Side.Left ? "Links" : "Rechts")}: {def.Name}";
+        }
     }
 
     private void Score(Side scorer)
     {
         _score[(int)scorer]++;
         _scoreSeq++;
-        _effects.Clear();
-        _hasPowerUp = false;
-        _hasWall = false;
-        _spawnTimer = SpawnInterval;
+        if (!KeepPowerUpsOnGoal)
+        {
+            _effects.Clear();
+            _pickups.Clear();
+            _walls.Clear();
+            _spawnTimer = SpawnInterval;
+        }
 
         if (_score[(int)scorer] >= MaxScore)
         {

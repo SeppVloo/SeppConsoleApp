@@ -93,7 +93,10 @@ else
 					<li class="toggle @(on ? "on" : "off")" @onclick="() => TogglePowerUp(idx)"><span class="dot" style="background:@pu.Color;color:@pu.Color"><span style="color:#0b1026">@pu.Symbol</span></span> <span class="pu-name">@pu.Name</span><span class="switch"></span></li>
 				}
 			</ul>
-			<p class="muted small" style="margin:.6rem 0 0">Bij online spelen gelden de instellingen van wie het spel start.</p>
+			<ul class="powerups" style="grid-template-columns:1fr;margin-top:.5rem">
+				<li class="toggle @(_keep ? "on" : "off")" @onclick="ToggleKeep"><span class="pu-name">Power-ups blijven staan na een goal</span><span class="switch"></span></li>
+			</ul>
+			<p class="muted small" style="margin:.6rem 0 0">Max @PongEngine.MaxPickups power-ups tegelijk in het veld. Bij online spelen gelden de instellingen van wie het spel start.</p>
 		</div>
 	</div>
 }
@@ -130,8 +133,17 @@ else
 		await JS.InvokeVoidAsync("localStorage.setItem", "pongDisabledPowerUps", string.Join(",", _disabled));
 	}
 
+	private bool _keep;
+
+	private async Task ToggleKeep()
+	{
+		_keep = !_keep;
+		await JS.InvokeVoidAsync("localStorage.setItem", "pongKeepPowerUps", _keep ? "1" : "0");
+	}
+
 	private PongEngine NewEngine() => new()
 	{
+		KeepPowerUpsOnGoal = _keep,
 		EnabledPowerUps = Enumerable.Range(0, PowerUpRegistry.All.Count).Where(i => !_disabled.Contains(i)).ToArray()
 	};
 
@@ -144,6 +156,7 @@ else
 			var dis = await JS.InvokeAsync<string?>("localStorage.getItem", "pongDisabledPowerUps");
 			if (!string.IsNullOrEmpty(dis))
 				_disabled = dis.Split(',').Select(x => int.TryParse(x, out var n) ? n : -1).Where(n => n >= 0).ToHashSet();
+			_keep = await JS.InvokeAsync<string?>("localStorage.getItem", "pongKeepPowerUps") == "1";
 			_pong = await JS.InvokeAsync<IJSObjectReference>("import", "./js/pong.js");
 			_net = await JS.InvokeAsync<IJSObjectReference>("import", "./js/net.js");
 			StateHasChanged();
