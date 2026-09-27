@@ -108,8 +108,11 @@ function draw(s) {
     }
 
     ctx.fillStyle = s.ballSpeedFactor > 1 ? "#ffa500" : "#fff";
-    if (!s.serving || Math.floor(performance.now() / 200) % 2 === 0)
-        ctx.fillRect(s.ballX, s.ballY, 14, 14);
+    if (!s.serving || Math.floor(performance.now() / 200) % 2 === 0) {
+        ctx.beginPath();
+        ctx.arc(s.ballX + 7, s.ballY + 7, 7, 0, Math.PI * 2);
+        ctx.fill();
+    }
 
     if (performance.now() < powerFlash.until) {
         ctx.fillStyle = "rgba(255,255,255,0.85)";
