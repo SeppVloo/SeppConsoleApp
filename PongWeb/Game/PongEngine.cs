@@ -41,6 +41,7 @@ public sealed class PongEngine
     public const int MaxPickups = 3;
     public const float WallWidth = 12f;
     public const float WallHeight = 110f;
+    public const int MaxWallsPerSide = 3;
     private readonly List<WallInfo> _walls = new();
     private readonly List<PickupInfo> _pickups = new();
     private int _wallSeq;
@@ -169,14 +170,21 @@ public sealed class PongEngine
         int min = Math.Max(1, Math.Min(WallMinHits, WallMaxHits));
         int max = Math.Max(min, WallMaxHits);
         int hp = _rng.Next(min, max + 1);
-        _walls.RemoveAll(w => w.Side == (int)picker);
-        _walls.Add(new WallInfo
+
+        // Max walls per side: the oldest one makes room for the new one.
+        var own = _walls.Where(w => w.Side == (int)picker).ToList();
+        if (own.Count >= MaxWallsPerSide) _walls.Remove(own[0]);
+
+        // Spread walls over a few columns so they don't stack on top of each other.
+        float x = 0, y = 0;
+        for (int attempt = 0; attempt < 20; attempt++)
         {
-            Side = (int)picker,
-            X = picker == Side.Left ? W * 0.22f : W * 0.78f - WallWidth,
-            Y = (float)(40 + _rng.NextDouble() * (H - 80 - WallHeight)),
-            H = WallHeight, Hp = hp, MaxHp = hp,
-        });
+            float col = W * (0.18f + 0.06f * _rng.Next(3));
+            x = picker == Side.Left ? col : W - col - WallWidth;
+            y = (float)(40 + _rng.NextDouble() * (H - 80 - WallHeight));
+            if (!_walls.Any(w => MathF.Abs(w.X - x) < WallWidth * 2 && MathF.Abs(w.Y - y) < WallHeight)) break;
+        }
+        _walls.Add(new WallInfo { Side = (int)picker, X = x, Y = y, H = WallHeight, Hp = hp, MaxHp = hp });
     }
 
     // Swept test against the previous position, so a fast ball can never pass through.
