@@ -164,7 +164,7 @@ html, body {
     min-height: 0;
     max-width: calc(100% - 1rem);
     aspect-ratio: 16 / 9;
-    object-fit: contain;
+    width: auto;
     touch-action: none;
     border-radius: 18px;
     border: 1px solid var(--card-border);

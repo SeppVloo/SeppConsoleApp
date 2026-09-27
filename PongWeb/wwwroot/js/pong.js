@@ -26,11 +26,11 @@ function setTarget(y) {
 // mode: "practice" | "host" | "client"
 export function start(el, dotnetRef, gameMode, side, powerUpInfo) {
     stop();
-    canvas = el; ctx = canvas.getContext("2d");
-    const dpr = Math.min(window.devicePixelRatio || 1, 3);
-    canvas.width = W * dpr; canvas.height = H * dpr;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    trail.length = 0; particles.length = 0; view = null; shake = 0; scorePulse = [0, 0]; lastScores = [0, 0];
+    canvas = el; ctx = canvas.getContext("2d", { alpha: false });
+    resize();
+    resizeObs = new ResizeObserver(resize); resizeObs.observe(canvas);
+    buffer.length = 0;
+    trail.length = 0;
     dotnet = dotnetRef; mode = gameMode; localSide = side; powerUps = powerUpInfo;
     latest = null; frame = 0; lastTime = performance.now();
     last = { hit: -1, score: -1, power: -1 };
@@ -43,7 +43,7 @@ export function start(el, dotnetRef, gameMode, side, powerUpInfo) {
         link.onInput = y => dotnet.invokeMethod("SetTarget", 1, y);
         link.onCmd = m => { if (m.type === "restart") dotnet.invokeMethod("Restart"); };
     } else if (mode === "client") {
-        link.onState = s => { latest = s; };
+        link.onState = s => { buffer.push({ t: performance.now(), s }); if (buffer.length > 8) buffer.shift(); latest = s; };
     }
 
     raf = requestAnimationFrame(loop);
@@ -52,6 +52,7 @@ export function start(el, dotnetRef, gameMode, side, powerUpInfo) {
 export function stop() {
     cancelAnimationFrame(raf);
     raf = 0;
+    resizeObs?.disconnect(); resizeObs = null;
     link.onState = link.onInput = link.onCmd = null;
 }
 
@@ -67,7 +68,7 @@ function loop(now) {
 
     if (mode !== "client") {
         latest = dotnet.invokeMethod("Tick", dt);
-        if (mode === "host" && (frame++ & 1) === 0) link.sendState(latest);
+        if (mode === "host") link.sendState(latest);
     }
     if (latest) draw(latest, dt);
 }
@@ -82,21 +83,86 @@ const trail = [];
 const particles = [];
 let shake = 0, view = null, scorePulse = [0, 0], lastScores = [0, 0];
 
+let resizeObs = null, scale = 1, bgCache = null;
+const buffer = [];
+const sprites = {};
+
 function lerp(a, b, t) { return a + (b - a) * t; }
 
-// Client receives ~30 states/s; smooth them so movement looks like 60+ fps.
-function smooth(s, dt) {
-    if (!view || mode !== "client") { view = { ...s }; return view; }
-    const t = 1 - Math.pow(0.0001, dt); // frame-rate independent easing
-    const jump = Math.abs(s.ballX - view.ballX) > 120;
-    view = {
-        ...s,
-        ballX: jump ? s.ballX : lerp(view.ballX, s.ballX, t),
-        ballY: jump ? s.ballY : lerp(view.ballY, s.ballY, t),
-        leftY: lerp(view.leftY, s.leftY, t), rightY: lerp(view.rightY, s.rightY, t),
-        leftH: lerp(view.leftH, s.leftH, t), rightH: lerp(view.rightH, s.rightH, t),
+// Match the backing store to the real on-screen pixel size so nothing is upscaled (= blurry).
+function resize() {
+    const r = canvas.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const pw = Math.max(1, Math.round(r.width * dpr)), ph = Math.max(1, Math.round(r.height * dpr));
+    if (canvas.width === pw && canvas.height === ph && bgCache) return;
+    canvas.width = pw; canvas.height = ph;
+    scale = pw / W;
+    ctx.setTransform(scale, 0, 0, ph / H, 0, 0);
+    ctx.imageSmoothingEnabled = true;
+    buildBackground(pw, ph);
+    for (const k in sprites) delete sprites[k];
+}
+
+function buildBackground(pw, ph) {
+    bgCache = document.createElement("canvas");
+    bgCache.width = pw; bgCache.height = ph;
+    const b = bgCache.getContext("2d");
+    b.setTransform(pw / W, 0, 0, ph / H, 0, 0);
+    const g = b.createLinearGradient(0, 0, W, H);
+    g.addColorStop(0, C.bg1); g.addColorStop(1, C.bg2);
+    b.fillStyle = g; b.fillRect(0, 0, W, H);
+    b.strokeStyle = "rgba(255,255,255,0.035)"; b.lineWidth = 1;
+    b.beginPath();
+    for (let x = 0; x <= W; x += 40) { b.moveTo(x, 0); b.lineTo(x, H); }
+    for (let y = 0; y <= H; y += 40) { b.moveTo(0, y); b.lineTo(W, y); }
+    b.stroke();
+    b.strokeStyle = C.line; b.lineWidth = 2;
+    b.setLineDash([6, 10]);
+    b.beginPath(); b.moveTo(W / 2, 0); b.lineTo(W / 2, H); b.stroke();
+    b.setLineDash([]);
+    b.beginPath(); b.arc(W / 2, H / 2, 50, 0, Math.PI * 2); b.stroke();
+}
+
+// Pre-rendered glowing circle: shadowBlur per frame is very slow on phones.
+function glowSprite(color, r, blur) {
+    const key = color + r + "_" + blur;
+    if (sprites[key]) return sprites[key];
+    const size = Math.ceil((r + blur) * 2 * scale);
+    const c = document.createElement("canvas");
+    c.width = c.height = size;
+    const g = c.getContext("2d");
+    g.scale(scale, scale);
+    const m = r + blur;
+    const rg = g.createRadialGradient(m, m, r * 0.6, m, m, m);
+    rg.addColorStop(0, color); rg.addColorStop(1, "rgba(0,0,0,0)");
+    g.globalAlpha = 0.55; g.fillStyle = rg;
+    g.beginPath(); g.arc(m, m, m, 0, Math.PI * 2); g.fill();
+    g.globalAlpha = 1; g.fillStyle = color;
+    g.beginPath(); g.arc(m, m, r, 0, Math.PI * 2); g.fill();
+    return sprites[key] = { c, m };
+}
+
+function drawSprite(sp, x, y) { ctx.drawImage(sp.c, x - sp.m, y - sp.m, sp.m * 2, sp.m * 2); }
+
+// Client: render slightly in the past and interpolate between two received states.
+const DELAY = 50;
+function smooth(s) {
+    if (mode !== "client" || buffer.length < 2) return s;
+    const rt = performance.now() - DELAY;
+    let i = buffer.length - 1;
+    while (i > 0 && buffer[i - 1].t > rt) i--;
+    if (i === 0) return buffer[0].s;
+    const a = buffer[i - 1], b = buffer[i];
+    if (rt >= b.t) return b.s;
+    const t = (rt - a.t) / (b.t - a.t);
+    const A = a.s, B = b.s;
+    if (A.scoreSeq !== B.scoreSeq || Math.abs(A.ballX - B.ballX) > 120) return B;
+    return {
+        ...B,
+        ballX: lerp(A.ballX, B.ballX, t), ballY: lerp(A.ballY, B.ballY, t),
+        leftY: lerp(A.leftY, B.leftY, t), rightY: lerp(A.rightY, B.rightY, t),
+        leftH: lerp(A.leftH, B.leftH, t), rightH: lerp(A.rightH, B.rightH, t),
     };
-    return view;
 }
 
 function burst(x, y, color, count, speed) {
@@ -143,22 +209,9 @@ function draw(raw, dt) {
     ctx.save();
     if (shake > 0.2) { ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake); shake *= Math.pow(0.001, dt); }
 
-    // Background
-    const g = ctx.createLinearGradient(0, 0, W, H);
-    g.addColorStop(0, C.bg1); g.addColorStop(1, C.bg2);
-    ctx.fillStyle = g; ctx.fillRect(-20, -20, W + 40, H + 40);
-
-    // Subtle grid
-    ctx.strokeStyle = "rgba(255,255,255,0.035)"; ctx.lineWidth = 1;
-    for (let x = 0; x <= W; x += 40) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
-    for (let y = 0; y <= H; y += 40) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
-
-    // Center line + circle
-    ctx.strokeStyle = C.line; ctx.lineWidth = 2;
-    ctx.setLineDash([6, 10]);
-    ctx.beginPath(); ctx.moveTo(W / 2, 0); ctx.lineTo(W / 2, H); ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.beginPath(); ctx.arc(W / 2, H / 2, 50, 0, Math.PI * 2); ctx.stroke();
+    // Background (cached)
+    ctx.fillStyle = C.bg1; ctx.fillRect(-20, -20, W + 40, H + 40);
+    ctx.drawImage(bgCache, 0, 0, W, H);
 
     // Scores
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
@@ -181,14 +234,11 @@ function draw(raw, dt) {
         ctx.save();
         ctx.translate(cx, cy);
         ctx.rotate(now / 1200);
-        glow(info.color, 24);
         ctx.strokeStyle = info.color; ctx.lineWidth = 2.5;
         ctx.beginPath(); ctx.arc(0, 0, 19 * pulse, 0, Math.PI * 1.4); ctx.stroke();
         ctx.restore();
-        glow(info.color, 18);
-        ctx.fillStyle = info.color;
-        ctx.beginPath(); ctx.arc(cx, cy, 13 * pulse, 0, Math.PI * 2); ctx.fill();
-        noGlow();
+        const sp = glowSprite(info.color, 13, 12);
+        ctx.drawImage(sp.c, cx - sp.m * pulse, cy - sp.m * pulse, sp.m * 2 * pulse, sp.m * 2 * pulse);
         ctx.fillStyle = "#0b1026";
         ctx.font = "700 16px system-ui, sans-serif";
         ctx.fillText(info.symbol, cx, cy + 1);
@@ -207,10 +257,9 @@ function draw(raw, dt) {
 
     // Ball
     if (visible) {
-        glow(ballColor, 22);
-        ctx.fillStyle = ballColor;
-        ctx.beginPath(); ctx.arc(bx, by, 7, 0, Math.PI * 2); ctx.fill();
-        noGlow();
+        drawSprite(glowSprite(ballColor, 7, 12), bx, by);
+        ctx.fillStyle = "#fff";
+        ctx.beginPath(); ctx.arc(bx, by, 4.5, 0, Math.PI * 2); ctx.fill();
     }
 
     // Particles
@@ -264,11 +313,12 @@ function colorOf(i, s) {
 
 function paddle(x, cy, h, i, s) {
     const color = colorOf(i, s);
-    glow(color, 20);
-    const grad = ctx.createLinearGradient(x, 0, x + 12, 0);
+    ctx.globalAlpha = 0.18; ctx.fillStyle = color;
+    roundRect(x - 6, cy - h / 2 - 6, 24, h + 12, 12); ctx.fill();
+    ctx.globalAlpha = 1;
+    const grad
     grad.addColorStop(0, color); grad.addColorStop(1, "#ffffff");
     ctx.fillStyle = grad;
     roundRect(x, cy - h / 2, 12, h, 6);
     ctx.fill();
-    noGlow();
 }

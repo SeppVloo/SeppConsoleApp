@@ -245,13 +245,13 @@ else
 	{
 		if (_engine is null) return null;
 		// Fixed 1/120 s substeps so a fast ball can't skip through a paddle on a slow frame.
-		const float step = 1f / 120f;
-		_tickAcc = Math.Min(_tickAcc + dt, 0.1f);
-		while (_tickAcc >= step) { _engine.Tick(step); _tickAcc -= step; }
+		// Split the frame into equal substeps (≤ 1/120 s) so every frame advances by exactly dt — no judder.
+		dt = Math.Min(dt, 0.1f);
+		var n = Math.Max(1, (int)MathF.Ceiling(dt * 120f));
+		for (var i = 0; i < n; i++) _engine.Tick(dt / n);
 		return _engine.Snapshot();
 	}
 
-	private float _tickAcc;
 
 	[JSInvokable]
 	public void SetTarget(int side, float? y) => _engine?.SetTarget((Side)side, y);
