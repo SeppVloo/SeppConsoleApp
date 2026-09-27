@@ -272,10 +272,10 @@ else
 	private int[] _aiLevel = [AutoLevel, AutoLevel, AutoLevel, AutoLevel];
 
 	// --- Skill: 0 = beginner, 1 = pro. Built up from match results and stored on this device. ---
-	private float _skill = 0.3f;
+	private float _skill = 0.15f;
 	private int _gamesPlayed;
 	private bool _resultCounted;
-	private float AutoSpeed => 0.4f + _skill * 0.8f;
+	private float AutoSpeed => 0.3f + _skill * 0.85f;
 	private string SkillText => $"{(int)MathF.Round(_skill * 100)} / 100 · {_gamesPlayed} potjes";
 
 	private async Task RecordResult(GameState s)

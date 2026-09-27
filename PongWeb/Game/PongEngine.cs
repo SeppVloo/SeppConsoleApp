@@ -65,7 +65,7 @@ public sealed class PongEngine
 
     private float _bx, _by, _vx, _vy;
     private float _spin;                                  // curve of the ball (units/s² on vy)
-    private const float MaxSpin = 900f;
+    private const float MaxSpin = 1600f;
     private readonly float[] _pv = new float[MaxSlots];   // smoothed paddle velocity
     private readonly float[] _py = new float[MaxSlots];
     private readonly float[] _ph = new float[MaxSlots];
@@ -142,7 +142,7 @@ public sealed class PongEngine
 
         float f = _mods.BallSpeedFactor;
         _vy += _spin * dt;
-        _spin *= MathF.Pow(0.25f, dt);
+        _spin *= MathF.Pow(0.4f, dt);
         _prevBx = _bx; _prevBy = _by;
         _bx += _vx * f * dt;
         _by += _vy * f * dt;
@@ -340,6 +340,7 @@ public sealed class PongEngine
         _vy = MathF.Sin(angle) * StartSpeed;
         _serveTimer = ServeDelay;
         _spin = 0;
+        NewAiErrors();
         _lastHit = toRight ? Side.Left : Side.Right;
     }
 
@@ -359,14 +360,15 @@ public sealed class PongEngine
         _vx = MathF.Cos(angle) * speed * dir;
         _vy = MathF.Sin(angle) * speed;
         // Effect: a moving paddle drags the ball along and gives it spin that curves its path.
-        float pv = Math.Clamp(_pv[p], -1500f, 1500f);
-        _vy += pv * 0.15f;
-        _spin = pv / 1500f * MaxSpin;
+        float pv = Math.Clamp(_pv[p], -1200f, 1200f);
+        _vy += pv * 0.25f;
+        _spin = pv / 1200f * MaxSpin;
         _bx = side == Side.Left
             ? GameState.PaddleMargin + GameState.PaddleWidth
             : W - GameState.PaddleMargin - GameState.PaddleWidth - GameState.BallSize;
         _lastHit = side;
         _hitSeq++;
+        NewAiErrors();
     }
 
     private void UpdatePaddle(int p, float dt)
@@ -426,13 +428,29 @@ public sealed class PongEngine
         bool incoming = p % 2 == 0 ? _vx < 0 : _vx > 0;
         float home = (LaneTop(p) + LaneBottom(p)) / 2;
         if (!incoming) return home;
-        float ball = _by + GameState.BallSize / 2;
+        // Reacts late: a weaker computer only starts moving when the ball is closer.
+        float dist = MathF.Abs(_bx + GameState.BallSize / 2 - (PaddleX(p) + GameState.PaddleWidth / 2));
+        float skill = Math.Clamp(AiSpeed[p], 0.3f, 1.2f);
+        if (dist > W * (0.25f + skill * 0.5f)) return _py[p];
+        float ball = _by + GameState.BallSize / 2 + _aiError[p];
         if (TeamSize > 1)
         {
             int mate = (p + 2) % 4;
             if (MathF.Abs(_py[mate] - ball) < MathF.Abs(_py[p] - ball)) return home;
         }
         return ball;
+    }
+
+    // New aiming mistake per shot: weaker computers miss by more.
+    private readonly float[] _aiError = new float[MaxSlots];
+    private void NewAiErrors()
+    {
+        for (int p = 0; p < MaxSlots; p++)
+        {
+            float skill = Math.Clamp(AiSpeed[p], 0.3f, 1.2f);
+            float range = _ph[p] * (1.3f - skill);
+            _aiError[p] = (float)(_rng.NextDouble() * 2 - 1) * MathF.Max(0, range);
+        }
     }
 
     private void UpdatePowerUps(float dt)
