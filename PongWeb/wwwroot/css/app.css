@@ -217,3 +217,13 @@ html, body {
 .loading-progress circle:last-child { stroke: var(--cyan); stroke-linecap: round; stroke-dasharray: calc(3.141 * var(--blazor-load-percentage, 0%) * 0.8), 500%; transition: stroke-dasharray .05s ease-in-out; filter: drop-shadow(0 0 6px var(--cyan)); }
 .loading-progress-text { position: absolute; text-align: center; font-weight: 700; color: var(--muted); inset: calc(30vh + 2.9rem) 0 auto .2rem; }
 .loading-progress-text:after { content: var(--blazor-load-percentage-text, "Laden"); }
+
+/* GameCenter */
+.games { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 1rem; width: 100%; max-width: 560px; }
+.game-tile { display: flex; flex-direction: column; align-items: center; gap: .35rem; padding: 1.4rem 1rem; border-radius: 18px; text-decoration: none; color: #fff; text-align: center; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.12); backdrop-filter: blur(12px); transition: transform .15s, border-color .15s; }
+a.game-tile:hover { transform: translateY(-3px); border-color: #22d3ee88; }
+.game-tile.soon { opacity: .45; }
+.game-icon { font-size: 2.6rem; }
+.game-name { font-weight: 800; font-size: 1.15rem; }
+.back { align-self: flex-start; text-decoration: none; }
+

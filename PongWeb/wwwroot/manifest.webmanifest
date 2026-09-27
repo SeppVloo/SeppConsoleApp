@@ -1,10 +1,10 @@
 {
-  "name": "PongWeb",
-  "short_name": "PongWeb",
+  "name": "Sepps GameCenter",
+  "short_name": "Sepps GameCenter",
   "id": "./",
   "start_url": "./",
   "display": "standalone",
-  "background_color": "#ffffff",
+  "background_color": "#0b1026",
   "theme_color": "#03173d",
   "prefer_related_applications": false,
   "icons": [

@@ -27,9 +27,12 @@ jobs:
       - name: Publish
         run: dotnet publish PongWeb/PongWeb.csproj -c Release -o out
 
-      # GitHub Pages serves the site from /<repo-name>/, so fix the <base href>.
+      # GitHub Pages serves the site from /<repo-name>/, unless a custom domain (CNAME) is used: then from /.
       - name: Set base href
-        run: sed -i 's|<base href="/" />|<base href="/${{ github.event.repository.name }}/" />|' out/wwwroot/index.html
+        run: |
+          if [ ! -f out/wwwroot/CNAME ]; then
+            sed -i 's|<base href="/" />|<base href="/${{ github.event.repository.name }}/" />|' out/wwwroot/index.html
+          fi
 
       # index.html changed, so its integrity hash in the service-worker manifest must be recomputed.
       - name: Fix service worker hash

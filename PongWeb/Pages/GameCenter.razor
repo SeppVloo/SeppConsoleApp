@@ -1,0 +1,40 @@
+@page "/"
+
+<PageTitle>Sepps GameCenter</PageTitle>
+
+<div class="lobby">
+    <h1 class="logo">SEPPS GAMECENTER</h1>
+    <p class="tagline">Kies een spel</p>
+
+    <div class="games">
+        @foreach (var g in Games)
+        {
+            if (g.Href is null)
+            {
+                <div class="game-tile soon">
+                    <span class="game-icon">@g.Icon</span>
+                    <span class="game-name">@g.Name</span>
+                    <span class="muted small">Binnenkort</span>
+                </div>
+            }
+            else
+            {
+                <a class="game-tile" href="@g.Href">
+                    <span class="game-icon">@g.Icon</span>
+                    <span class="game-name">@g.Name</span>
+                    <span class="muted small">@g.Description</span>
+                </a>
+            }
+        }
+    </div>
+</div>
+
+@code {
+    private record GameInfo(string Icon, string Name, string Description, string? Href);
+
+    private static readonly GameInfo[] Games =
+    [
+        new("🏓", "Pong", "Samen via wifi of internet, met power-ups", "pong"),
+        new("🎮", "Nieuw spel", "", null),
+    ];
+}

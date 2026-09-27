@@ -1,4 +1,4 @@
-@page "/"
+@page "/pong"
 @using PongWeb.Game
 @implements IAsyncDisposable
 @inject IJSRuntime JS
@@ -173,7 +173,7 @@ else
 	}
 
 	private ElementReference _canvas;
-	private DotNetObjectReference<Home>? _self;
+	private DotNetObjectReference<Pong>? _self;
 	private IJSObjectReference? _net, _pong;
 	private PongEngine? _engine;
 	private string? _mode;           // "practice" | "host" | "client"
