@@ -296,12 +296,20 @@ else
 		_wallSizeMax = Math.Clamp(p[5], _wallSizeMin, 250);
 	}
 
+	private static readonly string[] BotNames =
+	[
+		"🤖 Robo Rik", "🦾 Bleep Bloop", "👾 Pixel Piet", "🛸 Captain Byte", "⚡ Turbo Tessa", "🐙 Octo-Otto",
+		"🦖 Dino Dirk", "🍕 Pizza Pong", "🐸 Kikker Karel", "🚀 Rocket Rosa", "🧠 Brein Bert", "🦄 Uni Unit",
+		"🍌 Banaan-o-Bot", "🐧 Pinguïn Pim", "🔋 Batterij Bas", "🎩 Meneer Megahertz",
+	];
+
 	private void FillSlotNames()
 	{
 		_slotNames = new string[PongEngine.MaxSlots];
 		_slotNames[0] = _name;
-		var i = 1;
-		foreach (var s in AiSlots()) _slotNames[s] = AiSlots().Count > 1 ? $"Computer {i++}" : "Computer";
+		var names = BotNames.OrderBy(_ => Random.Shared.Next()).ToArray();
+		var i = 0;
+		foreach (var s in AiSlots()) _slotNames[s] = names[i++];
 	}
 
 	protected override async Task OnAfterRenderAsync(bool firstRender)
