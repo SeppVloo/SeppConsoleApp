@@ -7,9 +7,13 @@
 {
 	<div class="game">
 		<div class="game-bar">
-			<button class="btn" @onclick="Leave">← Stoppen</button>
-			<span>@(_side == 0 ? _name : _opponent) vs @(_side == 0 ? _opponent : _name)</span>
-			<button class="btn" @onclick="RestartGame">↻ Opnieuw</button>
+			<button class="btn icon" @onclick="Leave">← Stoppen</button>
+			<span class="versus">
+				<span class="@(_side == 0 ? "me" : "them")">@(_side == 0 ? _name : _opponent)</span>
+				<span class="vs">VS</span>
+				<span class="@(_side == 1 ? "me" : "them")">@(_side == 0 ? _opponent : _name)</span>
+			</span>
+			<button class="btn icon" @onclick="RestartGame">↻ Opnieuw</button>
 		</div>
 		<canvas @ref="_canvas" width="800" height="450" class="pong-canvas"></canvas>
 		<div class="hint">Sleep met je vinger over het veld om je batje te bewegen</div>
@@ -18,10 +22,13 @@
 else
 {
 	<div class="lobby">
-		<h1>🏓 Pong</h1>
+		<h1 class="logo">PONG</h1>
+		<p class="tagline">Speel samen op hetzelfde wifi-netwerk</p>
 
-		<label>Jouw naam</label>
-		<input class="input" value="@_name" @onchange="NameChanged" maxlength="20" />
+		<div class="card">
+			<label>JOUW NAAM</label>
+			<input class="input" value="@_name" @onchange="NameChanged" maxlength="20" />
+		</div>
 
 		@if (_status is not null)
 		{
@@ -30,31 +37,38 @@ else
 
 		@if (_hosting)
 		{
-			<p>Wachten op tegenstander...</p>
-			<button class="btn wide" @onclick="CancelHosting">Annuleren</button>
+			<div class="card waiting">
+				<div class="radar"></div>
+				<p>Wachten op tegenstander...</p>
+				<button class="btn wide" @onclick="CancelHosting">Annuleren</button>
+			</div>
 		}
 		else
 		{
-			<button class="btn primary wide" @onclick="Host">Nieuw spel starten</button>
-			<button class="btn wide" @onclick="Practice">Oefenen tegen computer</button>
+			<div class="card">
+				<button class="btn primary wide" @onclick="Host">▶ Nieuw spel starten</button>
+				<button class="btn wide" @onclick="Practice">🤖 Oefenen tegen computer</button>
+			</div>
 
-			<h3>Spellen op dit wifi-netwerk</h3>
-			@if (!_netReady)
-			{
-				<p class="muted">Verbinden...</p>
-			}
-			else if (_peers.All(p => !p.Hosting))
-			{
-				<p class="muted">Nog niemand gevonden. Laat iemand anders "Nieuw spel starten" kiezen.</p>
-			}
-			@foreach (var peer in _peers.Where(p => p.Hosting))
-			{
-				<button class="btn success wide" @onclick="() => Join(peer.Id)">Meedoen met @peer.Name</button>
-			}
-			@if (_peers.Any(p => !p.Hosting))
-			{
-				<p class="muted small">Ook online: @string.Join(", ", _peers.Where(p => !p.Hosting).Select(p => p.Name))</p>
-			}
+			<div class="card">
+				<h3>@if (_netReady) { <span class="live-dot"></span> } Spellen in de buurt</h3>
+				@if (!_netReady)
+				{
+					<p class="empty">Verbinden...</p>
+				}
+				else if (_peers.All(p => !p.Hosting))
+				{
+					<p class="empty small">Nog niemand gevonden. Laat iemand anders "Nieuw spel starten" kiezen.</p>
+				}
+				@foreach (var peer in _peers.Where(p => p.Hosting))
+				{
+					<button class="btn success wide" @onclick="() => Join(peer.Id)"><span>@peer.Name</span><span>Meedoen →</span></button>
+				}
+				@if (_peers.Any(p => !p.Hosting))
+				{
+					<p class="muted small" style="margin:.5rem 0 0">Ook online: @string.Join(", ", _peers.Where(p => !p.Hosting).Select(p => p.Name))</p>
+				}
+			</div>
 			@if (_diag is not null)
 			{
 				<details class="diag">
@@ -68,13 +82,15 @@ else
 			}
 		}
 
-		<h3>Power-ups</h3>
-		<ul class="powerups">
-			@foreach (var pu in PowerUpRegistry.All)
-			{
-				<li><span class="dot" style="background:@pu.Color">@pu.Symbol</span> @pu.Name</li>
-			}
-		</ul>
+		<div class="card">
+			<h3>Power-ups</h3>
+			<ul class="powerups">
+				@foreach (var pu in PowerUpRegistry.All)
+				{
+					<li><span class="dot" style="background:@pu.Color;color:@pu.Color"><span style="color:#0b1026">@pu.Symbol</span></span> @pu.Name</li>
+				}
+			</ul>
+		</div>
 	</div>
 }
 
