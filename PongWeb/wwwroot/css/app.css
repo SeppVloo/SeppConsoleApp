@@ -1,0 +1,48 @@
+html, body {
+	margin: 0;
+	height: 100%;
+	background: #111;
+	color: #eee;
+	font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif;
+	overscroll-behavior: none;
+	-webkit-user-select: none;
+	user-select: none;
+}
+
+.lobby { max-width: 420px; margin: 0 auto; padding: 1.5rem 1rem calc(1.5rem + env(safe-area-inset-bottom)); }
+.lobby h1 { text-align: center; }
+.lobby h3 { margin: 1.5rem 0 .5rem; font-size: 1.05rem; }
+.lobby label { display: block; margin-bottom: .25rem; }
+
+.input { width: 100%; box-sizing: border-box; padding: .6rem; font-size: 1rem; border-radius: 8px; border: 1px solid #444; background: #222; color: #eee; margin-bottom: 1rem; -webkit-user-select: text; user-select: text; }
+
+.btn { padding: .55rem .9rem; font-size: 1rem; border-radius: 8px; border: 1px solid #666; background: transparent; color: #eee; cursor: pointer; }
+.btn.wide { display: block; width: 100%; margin-bottom: .5rem; }
+.btn.primary { background: #1b6ec2; border-color: #1b6ec2; }
+.btn.success { background: #2e8b57; border-color: #2e8b57; }
+
+.status { background: #1d3557; padding: .6rem; border-radius: 8px; margin-bottom: 1rem; }
+.muted { color: #888; }
+.small { font-size: .85rem; }
+
+.powerups { list-style: none; padding: 0; }
+.powerups li { margin-bottom: .3rem; }
+.powerups .dot { display: inline-flex; width: 1.5rem; height: 1.5rem; border-radius: 50%; color: #000; font-weight: bold; align-items: center; justify-content: center; margin-right: .5rem; }
+
+.game { display: flex; flex-direction: column; align-items: center; height: 100dvh; box-sizing: border-box; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+.game-bar { display: flex; width: 100%; justify-content: space-between; align-items: center; gap: .5rem; padding: .25rem; box-sizing: border-box; }
+.pong-canvas { flex: 1; min-height: 0; max-width: 100%; aspect-ratio: 16 / 9; object-fit: contain; touch-action: none; background: #000; border: 1px solid #333; }
+.hint { font-size: .75rem; color: #777; padding-bottom: .25rem; }
+
+@media (orientation: portrait) {
+	.game .hint::after { content: " — draai je telefoon voor een groter veld"; }
+}
+
+#blazor-error-ui { display: none; position: fixed; bottom: 0; left: 0; width: 100%; padding: .6rem 1rem; background: #fcc; color: #000; z-index: 1000; }
+#blazor-error-ui .dismiss { cursor: pointer; position: absolute; right: .75rem; }
+
+.loading-progress { position: absolute; display: block; width: 8rem; height: 8rem; inset: 20vh 0 auto 0; margin: 0 auto; }
+.loading-progress circle { fill: none; stroke: #333; stroke-width: .6rem; transform-origin: 50% 50%; transform: rotate(-90deg); }
+.loading-progress circle:last-child { stroke: #4fc3f7; stroke-dasharray: calc(3.141 * var(--blazor-load-percentage, 0%) * 0.8), 500%; transition: stroke-dasharray .05s ease-in-out; }
+.loading-progress-text { position: absolute; text-align: center; font-weight: bold; inset: calc(20vh + 3.25rem) 0 auto .2rem; }
+.loading-progress-text:after { content: var(--blazor-load-percentage-text, "Laden"); }

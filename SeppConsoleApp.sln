@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 18
-VisualStudioVersion = 18.2.11415.280 d18.0
+VisualStudioVersion = 18.2.11415.280
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SeppConsoleApp", "SeppConsoleApp\SeppConsoleApp.csproj", "{7F3B3E7A-AF6A-45A2-BFD9-B59BBD6A4EC2}"
 EndProject
@@ -12,6 +12,8 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PongWinForms", "PongWinForms\PongWinForms.csproj", "{29DCD26F-F459-4259-B660-50741FF357DC}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Sepp2048Web", "Sepp2048Web\Sepp2048Web.csproj", "{20637801-E411-4162-B642-703D8CCF4B1F}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PongWeb", "PongWeb\PongWeb.csproj", "{9D493C78-1A27-4794-B929-7F2C55AC46D5}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -83,18 +85,18 @@ Global
 		{20637801-E411-4162-B642-703D8CCF4B1F}.Release|x64.Build.0 = Release|Any CPU
 		{20637801-E411-4162-B642-703D8CCF4B1F}.Release|x86.ActiveCfg = Release|Any CPU
 		{20637801-E411-4162-B642-703D8CCF4B1F}.Release|x86.Build.0 = Release|Any CPU
-		{F61F6667-D629-4E49-AD1D-D75ADE81F85E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{F61F6667-D629-4E49-AD1D-D75ADE81F85E}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{F61F6667-D629-4E49-AD1D-D75ADE81F85E}.Debug|x64.ActiveCfg = Debug|Any CPU
-		{F61F6667-D629-4E49-AD1D-D75ADE81F85E}.Debug|x64.Build.0 = Debug|Any CPU
-		{F61F6667-D629-4E49-AD1D-D75ADE81F85E}.Debug|x86.ActiveCfg = Debug|Any CPU
-		{F61F6667-D629-4E49-AD1D-D75ADE81F85E}.Debug|x86.Build.0 = Debug|Any CPU
-		{F61F6667-D629-4E49-AD1D-D75ADE81F85E}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{F61F6667-D629-4E49-AD1D-D75ADE81F85E}.Release|Any CPU.Build.0 = Release|Any CPU
-		{F61F6667-D629-4E49-AD1D-D75ADE81F85E}.Release|x64.ActiveCfg = Release|Any CPU
-		{F61F6667-D629-4E49-AD1D-D75ADE81F85E}.Release|x64.Build.0 = Release|Any CPU
-		{F61F6667-D629-4E49-AD1D-D75ADE81F85E}.Release|x86.ActiveCfg = Release|Any CPU
-		{F61F6667-D629-4E49-AD1D-D75ADE81F85E}.Release|x86.Build.0 = Release|Any CPU
+		{9D493C78-1A27-4794-B929-7F2C55AC46D5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9D493C78-1A27-4794-B929-7F2C55AC46D5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9D493C78-1A27-4794-B929-7F2C55AC46D5}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{9D493C78-1A27-4794-B929-7F2C55AC46D5}.Debug|x64.Build.0 = Debug|Any CPU
+		{9D493C78-1A27-4794-B929-7F2C55AC46D5}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{9D493C78-1A27-4794-B929-7F2C55AC46D5}.Debug|x86.Build.0 = Debug|Any CPU
+		{9D493C78-1A27-4794-B929-7F2C55AC46D5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9D493C78-1A27-4794-B929-7F2C55AC46D5}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9D493C78-1A27-4794-B929-7F2C55AC46D5}.Release|x64.ActiveCfg = Release|Any CPU
+		{9D493C78-1A27-4794-B929-7F2C55AC46D5}.Release|x64.Build.0 = Release|Any CPU
+		{9D493C78-1A27-4794-B929-7F2C55AC46D5}.Release|x86.ActiveCfg = Release|Any CPU
+		{9D493C78-1A27-4794-B929-7F2C55AC46D5}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

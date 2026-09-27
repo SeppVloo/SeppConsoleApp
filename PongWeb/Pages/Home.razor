@@ -1,0 +1,236 @@
+@page "/"
+@using PongWeb.Game
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+
+@if (_mode is not null)
+{
+	<div class="game">
+		<div class="game-bar">
+			<button class="btn" @onclick="Leave">← Stoppen</button>
+			<span>@(_side == 0 ? _name : _opponent) vs @(_side == 0 ? _opponent : _name)</span>
+			<button class="btn" @onclick="RestartGame">↻ Opnieuw</button>
+		</div>
+		<canvas @ref="_canvas" width="800" height="450" class="pong-canvas"></canvas>
+		<div class="hint">Sleep met je vinger over het veld om je batje te bewegen</div>
+	</div>
+}
+else
+{
+	<div class="lobby">
+		<h1>🏓 Pong</h1>
+
+		<label>Jouw naam</label>
+		<input class="input" value="@_name" @onchange="NameChanged" maxlength="20" />
+
+		@if (_status is not null)
+		{
+			<div class="status">@_status</div>
+		}
+
+		@if (_hosting)
+		{
+			<p>Wachten op tegenstander...</p>
+			<button class="btn wide" @onclick="CancelHosting">Annuleren</button>
+		}
+		else
+		{
+			<button class="btn primary wide" @onclick="Host">Nieuw spel starten</button>
+			<button class="btn wide" @onclick="Practice">Oefenen tegen computer</button>
+
+			<h3>Spellen op dit wifi-netwerk</h3>
+			@if (!_netReady)
+			{
+				<p class="muted">Verbinden...</p>
+			}
+			else if (_peers.All(p => !p.Hosting))
+			{
+				<p class="muted">Nog niemand gevonden. Laat iemand anders "Nieuw spel starten" kiezen.</p>
+			}
+			@foreach (var peer in _peers.Where(p => p.Hosting))
+			{
+				<button class="btn success wide" @onclick="() => Join(peer.Id)">Meedoen met @peer.Name</button>
+			}
+			@if (_peers.Any(p => !p.Hosting))
+			{
+				<p class="muted small">Ook online: @string.Join(", ", _peers.Where(p => !p.Hosting).Select(p => p.Name))</p>
+			}
+		}
+
+		<h3>Power-ups</h3>
+		<ul class="powerups">
+			@foreach (var pu in PowerUpRegistry.All)
+			{
+				<li><span class="dot" style="background:@pu.Color">@pu.Symbol</span> @pu.Name</li>
+			}
+		</ul>
+	</div>
+}
+
+@code {
+	public record Peer(string Id, string Name, bool Hosting);
+
+	private ElementReference _canvas;
+	private DotNetObjectReference<Home>? _self;
+	private IJSObjectReference? _net, _pong;
+	private PongEngine? _engine;
+	private string? _mode;           // "practice" | "host" | "client"
+	private bool _startCanvas;
+	private int _side;
+	private string _name = "";
+	private string? _opponent;
+	private string? _status;
+	private bool _hosting, _netReady;
+	private List<Peer> _peers = [];
+
+	protected override async Task OnAfterRenderAsync(bool firstRender)
+	{
+		if (firstRender)
+		{
+			_self = DotNetObjectReference.Create(this);
+			_name = await JS.InvokeAsync<string?>("localStorage.getItem", "pongName") ?? $"Speler {Random.Shared.Next(100, 999)}";
+			_pong = await JS.InvokeAsync<IJSObjectReference>("import", "./js/pong.js");
+			_net = await JS.InvokeAsync<IJSObjectReference>("import", "./js/net.js");
+			StateHasChanged();
+			try
+			{
+				await _net.InvokeVoidAsync("start", _self, _name);
+				_netReady = true;
+			}
+			catch (JSException ex)
+			{
+				_status = $"Online spelen niet beschikbaar: {ex.Message}";
+			}
+			StateHasChanged();
+		}
+
+		if (_startCanvas && _mode is not null && _pong is not null)
+		{
+			_startCanvas = false;
+			var info = PowerUpRegistry.All.Select(p => new { color = p.Color, symbol = p.Symbol });
+			await _pong.InvokeVoidAsync("start", _canvas, _self, _mode, _side, info);
+		}
+	}
+
+	private async Task NameChanged(ChangeEventArgs e)
+	{
+		var name = e.Value?.ToString()?.Trim();
+		if (string.IsNullOrEmpty(name)) return;
+		_name = name;
+		await JS.InvokeVoidAsync("localStorage.setItem", "pongName", _name);
+		if (_netReady) await _net!.InvokeVoidAsync("setName", _name);
+	}
+
+	private void Practice()
+	{
+		_engine = new PongEngine { AiRight = true };
+		BeginGame("practice", 0, "Computer");
+	}
+
+	private async Task Host()
+	{
+		if (!_netReady) return;
+		_status = null;
+		_hosting = true;
+		await _net!.InvokeVoidAsync("setHosting", true);
+	}
+
+	private async Task CancelHosting()
+	{
+		_hosting = false;
+		await _net!.InvokeVoidAsync("setHosting", false);
+	}
+
+	private async Task Join(string peerId)
+	{
+		_status = "Verbinden...";
+		await _net!.InvokeVoidAsync("join", peerId);
+	}
+
+	private void BeginGame(string mode, int side, string? opponent)
+	{
+		_mode = mode;
+		_side = side;
+		_opponent = opponent;
+		_status = null;
+		_hosting = false;
+		_startCanvas = true;
+	}
+
+	private async Task Leave()
+	{
+		if (_pong is not null) await _pong.InvokeVoidAsync("stop");
+		if (_mode is "host" or "client") await _net!.InvokeVoidAsync("leave");
+		_mode = null;
+		_engine = null;
+	}
+
+	private async Task RestartGame()
+	{
+		if (_pong is not null) await _pong.InvokeVoidAsync("restart");
+	}
+
+	// --- Called from JavaScript ---
+
+	[JSInvokable]
+	public void OnPeers(List<Peer> peers)
+	{
+		_peers = peers;
+		StateHasChanged();
+	}
+
+	[JSInvokable]
+	public void OnStatus(string status)
+	{
+		_status = status;
+		StateHasChanged();
+	}
+
+	[JSInvokable]
+	public void OnGameStart(int side, string opponent)
+	{
+		_engine = side == 0 ? new PongEngine() : null;
+		BeginGame(side == 0 ? "host" : "client", side, opponent);
+		StateHasChanged();
+	}
+
+	[JSInvokable]
+	public async Task OnGameEnd(string reason)
+	{
+		if (_pong is not null) await _pong.InvokeVoidAsync("stop");
+		_mode = null;
+		_engine = null;
+		_status = reason;
+		StateHasChanged();
+	}
+
+	[JSInvokable]
+	public GameState? Tick(float dt)
+	{
+		if (_engine is null) return null;
+		// Fixed 1/120 s substeps so a fast ball can't skip through a paddle on a slow frame.
+		const float step = 1f / 120f;
+		_tickAcc = Math.Min(_tickAcc + dt, 0.1f);
+		while (_tickAcc >= step) { _engine.Tick(step); _tickAcc -= step; }
+		return _engine.Snapshot();
+	}
+
+	private float _tickAcc;
+
+	[JSInvokable]
+	public void SetTarget(int side, float? y) => _engine?.SetTarget((Side)side, y);
+
+	[JSInvokable]
+	public void Restart() => _engine?.Reset();
+
+	public async ValueTask DisposeAsync()
+	{
+		try
+		{
+			if (_pong is not null) { await _pong.InvokeVoidAsync("stop"); await _pong.DisposeAsync(); }
+			if (_net is not null) await _net.DisposeAsync();
+		}
+		catch (JSDisconnectedException) { }
+		_self?.Dispose();
+	}
+}
