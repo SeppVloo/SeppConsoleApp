@@ -126,6 +126,17 @@ html, body {
 .btn.seat { width: 100%; }
 .btn.seat.ai { background: #f472b61a; border-color: #f472b655; }
 .btn.seat.local { background: #a3e6351a; border-color: #a3e63555; }
+.seat-box { display: flex; flex-direction: column; gap: .3rem; padding: .4rem; border-radius: 14px; background: rgba(0, 0, 0, .18); }
+.input.sm { padding: .5rem .7rem; font-size: .95rem; }
+.ctl { font-size: .75rem; color: var(--muted); text-align: center; }
+.tabs { margin-bottom: 1rem; }
+.tabs .btn { padding: .8rem .5rem; }
+.badge { display: inline-flex; min-width: 1.3rem; height: 1.3rem; padding: 0 .35rem; border-radius: 999px; background: var(--green); color: #06281d; font-size: .75rem; font-weight: 800; align-items: center; justify-content: center; }
+.join-names { display: flex; flex-direction: column; gap: .4rem; margin-top: .6rem; }
+.settings summary { cursor: pointer; list-style: none; font-size: .8rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.settings summary .small { text-transform: none; letter-spacing: 0; font-weight: 400; }
+.settings summary::-webkit-details-marker { display: none; }
+.settings[open] summary { margin-bottom: .75rem; }
 .seg.speed { gap: .25rem; }
 .seg.speed .btn { padding: .3rem 0; font-size: 1rem; }
 .powerups li .btn.icon { padding: .2rem .6rem; }

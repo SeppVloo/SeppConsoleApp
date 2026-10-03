@@ -343,7 +343,7 @@ function draw(raw, dt) {
 
     // Paddles
     s.paddles.forEach((p, i) => paddle(p.x, p.y, p.h, p, localSlots.includes(i)));
-    if (localSlots.length > 1 && frame < 400) {
+    if (localSlots.length > 1 && frame < 400 && !matchMedia("(pointer: coarse)").matches) {
         const labels = ["W/S", "↑/↓", "T/G", "I/K"];
         ctx.font = "700 14px system-ui, sans-serif";
         ctx.fillStyle = "rgba(255,255,255,0.8)";

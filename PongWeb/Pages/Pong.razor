@@ -1,4 +1,4 @@
-@page "/pong"
+﻿@page "/pong"
 @using PongWeb.Game
 @implements IAsyncDisposable
 @inject IJSRuntime JS
@@ -27,22 +27,7 @@ else
 	<div class="lobby">
 		<a class="btn icon back" href="">← Gameplein</a>
 		<h1 class="logo">PONG</h1>
-		<p class="tagline">Speel samen via wifi of internet</p>
-
-		<div class="card">
-			<label>JOUW NAAM</label>
-			<input class="input" value="@_name" @onchange="NameChanged" maxlength="20" />
-			<p class="muted small" style="margin:.5rem 0 0">🏅 Jouw niveau: <b>@SkillText</b> · computer op 🎯 past zich hierop aan</p>
-		</div>
-
-		<div class="card">
-			<label>WAAR SPEEL JE?</label>
-			<div class="seg">
-				<button class="btn @(!_online ? "sel" : "")" @onclick="() => SetOnline(false)">📶 Dit wifinetwerk</button>
-				<button class="btn @(_online ? "sel" : "")" @onclick="() => SetOnline(true)">🌍 Internet</button>
-			</div>
-			<p class="muted small" style="margin:.5rem 0 0">@(_online ? "Je ziet iedereen die nu online is en alle gestarte spellen, waar ook ter wereld." : "Je ziet automatisch iedereen op hetzelfde wifinetwerk.")</p>
-		</div>
+		<p class="tagline">🏅 Jouw niveau: <b>@SkillText</b></p>
 
 		@if (_status is not null)
 		{
@@ -54,7 +39,7 @@ else
 			<div class="card waiting">
 				<div class="radar"></div>
 				<p>Wachten op spelers... (@_lobbyPlayers.Count / @RemoteSlots().Count)</p>
-				<p class="muted small">Eén apparaat mag meerdere spelers meenemen.</p>
+				<p class="muted small">@(_online ? "Iedereen op internet" : "Iedereen op dit wifinetwerk") kan nu meedoen via "Meedoen". Eén apparaat mag meerdere spelers meenemen.</p>
 				@if (_lobbyPlayers.Count > 0)
 				{
 					<p class="muted small">@string.Join(", ", _lobbyPlayers)</p>
@@ -64,75 +49,89 @@ else
 		}
 		else
 		{
-			<div class="card">
-				<h3>Spel</h3>
-				<div class="seg">
-					<button class="btn @(_teamSize == 1 ? "sel" : "")" @onclick="() => SetTeamSize(1)">1 tegen 1</button>
-					<button class="btn @(_teamSize == 2 ? "sel" : "")" @onclick="() => SetTeamSize(2)">2 tegen 2</button>
-				</div>
-				<div class="teams">
-					@for (var t = 0; t < 2; t++)
-					{
-						var team = t;
-						<div class="team">
-							<label>@(team == 0 ? "JOUW TEAM" : "TEGENSTANDERS")</label>
-							@foreach (var s in Enumerable.Range(0, _teamSize * 2).Where(s => s % 2 == team))
-							{
-								var slot = s;
-								if (slot == 0)
-								{
-									<div class="seat me">🙂 Jij</div>
-									<div class="muted small" style="text-align:center">⌨ @KeyText(0)</div>
-								}
-								else
-								{
-									var ai = (_aiMask & (1 << slot)) != 0;
-									var local = (_localMask & (1 << slot)) != 0;
-									<button class="btn seat @(ai ? "ai" : local ? "local" : "")" @onclick="() => ToggleSeat(slot)">@(ai ? "🤖 Computer" : local ? "📱 Op dit apparaat" : "👤 Speler")</button>
-									@if (local)
-									{
-										<input class="input" placeholder="Naam" value="@_localNames[slot]" maxlength="20" @onchange="e => LocalNameChanged(slot, e)" />
-										<div class="muted small" style="text-align:center">⌨ @KeyText(slot)</div>
-									}
-									@if (ai)
-									{
-										<div class="seg speed">
-											@for (var lv = 0; lv < AiLevels.Length; lv++)
-											{
-												var l = lv;
-												<button class="btn @(_aiLevel[slot] == l ? "sel" : "")" title="@AiLevels[l].Name" @onclick="() => SetAiLevel(slot, l)">@AiLevels[l].Icon</button>
-											}
-										</div>
-									}
-								}
-							}
-						</div>
-					}
-				</div>
-				<p class="muted small" style="margin:.5rem 0 0">Tik op een plek om te wisselen tussen speler (ander apparaat), computer en speler op dit apparaat.</p>
-				@if (_teamSize == 2)
-				{
-					<ul class="powerups" style="grid-template-columns:1fr;margin-top:.5rem">
-						<li class="toggle @(_collide ? "on" : "off")" @onclick="ToggleCollide"><span class="pu-name">@(_collide ? "Batjes van teamgenoten botsen" : "Batjes van teamgenoten gaan door elkaar heen")</span><span class="switch"></span></li>
-					</ul>
-				}
-				<p class="muted small" style="margin:.5rem 0 .75rem">@SetupText()</p>
-				<button class="btn primary wide" @onclick="Start">▶ @(RemoteSlots().Count == 0 ? "Spelen" : "Nieuw spel starten")</button>
+			<div class="seg tabs">
+				<button class="btn @(_tab == 0 ? "sel" : "")" @onclick="() => _tab = 0">🎮 Nieuw spel</button>
+				<button class="btn @(_tab == 1 ? "sel" : "")" @onclick="() => _tab = 1">🤝 Meedoen @if (HostingPeers > 0) { <span class="badge">@HostingPeers</span> }</button>
 			</div>
 
-			<div class="card">
-				<h3>@if (_netReady) { <span class="live-dot"></span> } <span>@(_online ? "Online spelers & spellen" : "Spellen in de buurt")</span></h3>
-				@if (!_netReady)
-				{
-					<p class="empty">Verbinden...</p>
-				}
-				else if (_peers.All(p => !p.Hosting))
-				{
-					<p class="empty small">Nog niemand gevonden. Laat iemand anders "Nieuw spel starten" kiezen.</p>
-				}
-				@if (_peers.Any(p => p.Hosting))
-				{
-					<label style="margin-top:.25rem">SPELERS OP DIT APPARAAT BIJ MEEDOEN</label>
+			@if (_tab == 0)
+			{
+				<div class="card">
+					<div class="seg">
+						<button class="btn @(_teamSize == 1 ? "sel" : "")" @onclick="() => SetTeamSize(1)">1 tegen 1</button>
+						<button class="btn @(_teamSize == 2 ? "sel" : "")" @onclick="() => SetTeamSize(2)">2 tegen 2</button>
+					</div>
+					<div class="teams">
+						@for (var t = 0; t < 2; t++)
+						{
+							var team = t;
+							<div class="team">
+								<label>@(team == 0 ? "LINKS" : "RECHTS")</label>
+								@foreach (var s in Enumerable.Range(0, _teamSize * 2).Where(s => s % 2 == team))
+								{
+									var slot = s;
+									<div class="seat-box">
+										@if (slot == 0)
+										{
+											<div class="seat me">🙂 Jij</div>
+											<input class="input sm" placeholder="Jouw naam" value="@_name" @onchange="NameChanged" maxlength="20" />
+											<div class="ctl">@ControlText(0)</div>
+										}
+										else
+										{
+											var ai = (_aiMask & (1 << slot)) != 0;
+											var local = (_localMask & (1 << slot)) != 0;
+											<button class="btn seat @(ai ? "ai" : local ? "local" : "")" @onclick="() => ToggleSeat(slot)">@(ai ? "🤖 Computer" : local ? "📱 Op dit apparaat" : "🌐 Ander apparaat")</button>
+											@if (local)
+											{
+												<input class="input sm" placeholder="Naam" value="@_localNames[slot]" maxlength="20" @onchange="e => LocalNameChanged(slot, e)" />
+												<div class="ctl">@ControlText(slot)</div>
+											}
+											else if (ai)
+											{
+												<div class="seg speed">
+													@for (var lv = 0; lv < AiLevels.Length; lv++)
+													{
+														var l = lv;
+														<button class="btn @(_aiLevel[slot] == l ? "sel" : "")" title="@AiLevels[l].Name" @onclick="() => SetAiLevel(slot, l)">@AiLevels[l].Icon</button>
+													}
+												</div>
+											}
+										}
+									</div>
+								}
+							</div>
+						}
+					</div>
+					<p class="muted small" style="margin:.5rem 0 0">Tik op een plek om te wisselen: 🤖 computer → 📱 op dit apparaat → 🌐 ander apparaat.</p>
+					@if (_teamSize == 2)
+					{
+						<ul class="powerups" style="grid-template-columns:1fr;margin-top:.5rem">
+							<li class="toggle @(_collide ? "on" : "off")" @onclick="ToggleCollide"><span class="pu-name">Batjes van teamgenoten botsen</span><span class="switch"></span></li>
+						</ul>
+					}
+					@if (RemoteSlots().Count > 0)
+					{
+						<label style="margin-top:.75rem">ANDERE APPARATEN VIA</label>
+						<div class="seg">
+							<button class="btn @(!_online ? "sel" : "")" @onclick="() => SetOnline(false)">📶 Wifi</button>
+							<button class="btn @(_online ? "sel" : "")" @onclick="() => SetOnline(true)">🌍 Internet</button>
+						</div>
+					}
+					<p class="muted small" style="margin:.75rem 0">@SetupText()</p>
+					<button class="btn primary wide" @onclick="Start">▶ @(RemoteSlots().Count == 0 ? "Spelen" : "Spel starten")</button>
+				</div>
+			}
+			else
+			{
+				<div class="card">
+					<div class="seg">
+						<button class="btn @(!_online ? "sel" : "")" @onclick="() => SetOnline(false)">📶 Wifi</button>
+						<button class="btn @(_online ? "sel" : "")" @onclick="() => SetOnline(true)">🌍 Internet</button>
+					</div>
+					<p class="muted small" style="margin:.5rem 0 .75rem">@(_online ? "Spellen van iedereen die online is, waar ook ter wereld." : "Spellen op hetzelfde wifinetwerk.")</p>
+
+					<label>HOEVEEL SPELERS OP DIT APPARAAT?</label>
 					<div class="seg">
 						@for (var n = 1; n <= 3; n++)
 						{
@@ -140,59 +139,73 @@ else
 							<button class="btn @(_joinCount == c ? "sel" : "")" @onclick="() => SetJoinCount(c)">@c</button>
 						}
 					</div>
-					@if (_joinCount > 1)
-					{
-						<div class="muted small">🙂 @_name · ⌨ W/S</div>
+					<div class="join-names">
+						<input class="input sm" placeholder="Jouw naam" value="@_name" @onchange="NameChanged" maxlength="20" />
 						@for (var j = 1; j < _joinCount; j++)
 						{
 							var ji = j;
-							<input class="input" placeholder="Naam speler @(ji + 1)" value="@_joinNames[ji]" maxlength="20" @onchange="e => JoinNameChanged(ji, e)" />
+							<input class="input sm" placeholder="Naam speler @(ji + 1)" value="@_joinNames[ji]" maxlength="20" @onchange="e => JoinNameChanged(ji, e)" />
 						}
-						<p class="muted small" style="margin:0 0 .5rem">Toetsen hangen af van de plek die je krijgt (W/S, ↑/↓, T/G, I/K) en staan bij de start in beeld.</p>
+					</div>
+					@if (_joinCount > 1)
+					{
+						<p class="muted small" style="margin:.4rem 0 0">@(_touch ? "Ieder bestuurt het eigen batje door op de eigen helft van het veld te slepen." : "Ieder krijgt eigen toetsen (W/S, ↑/↓, T/G); ze staan bij de start naast het batje.")</p>
 					}
-				}
-				@foreach (var peer in _peers.Where(p => p.Hosting))
-				{
-					<button class="btn success wide" @onclick="() => Join(peer.Id)"><span>@peer.Name</span><span>Meedoen →</span></button>
-				}
-				@if (_peers.Any(p => !p.Hosting))
-				{
-					<p class="muted small" style="margin:.5rem 0 0">Ook online: @string.Join(", ", _peers.Where(p => !p.Hosting).Select(p => p.Name))</p>
-				}
-			</div>
-			@if (_diag is not null)
-			{
-				<details class="diag">
-					<summary>Verbindingsinfo</summary>
-					<div>Lobby-code: <b>@_diag.Room[^Math.Min(6, _diag.Room.Length)..]</b> @(_diag.IpOk ? "" : "(IP niet gevonden!)")</div>
-					<div>Signaal-servers: <b>@_diag.Relays / @_diag.RelaysTotal</b> verbonden</div>
-					<div>Directe verbindingen: <b>@_diag.Peers</b></div>
-					<div>Berichten ontvangen: <b>@_diag.Hellos</b></div>
-					<div class="small">Lobby-code moet op alle apparaten gelijk zijn. 0 signaal-servers = netwerk/contentblocker blokkeert ze.</div>
-				</details>
-			}
-		}
+				</div>
 
-		<div class="card">
-			<h3>Power-ups <span class="muted small" style="text-transform:none;letter-spacing:0;font-weight:400">· tik om aan/uit te zetten</span></h3>
-			<ul class="powerups">
-				@for (var i = 0; i < PowerUpRegistry.All.Count; i++)
+				<div class="card">
+					<h3>@if (_netReady) { <span class="live-dot"></span> } <span>Spellen</span></h3>
+					@if (!_netReady)
+					{
+						<p class="empty">Verbinden...</p>
+					}
+					else if (HostingPeers == 0)
+					{
+						<p class="empty small">Nog geen spellen. Laat iemand anders een spel starten met een 🌐 plek.</p>
+					}
+					@foreach (var peer in _peers.Where(p => p.Hosting))
+					{
+						<button class="btn success wide" @onclick="() => Join(peer.Id)"><span>@peer.Name</span><span>Meedoen →</span></button>
+					}
+					@if (_peers.Any(p => !p.Hosting))
+					{
+						<p class="muted small" style="margin:.5rem 0 0">Ook online: @string.Join(", ", _peers.Where(p => !p.Hosting).Select(p => p.Name))</p>
+					}
+				</div>
+				@if (_diag is not null)
 				{
-					var idx = i;
-					var pu = PowerUpRegistry.All[i];
-					var on = !_disabled.Contains(idx);
-					<li class="toggle @(on ? "on" : "off")" @onclick="() => TogglePowerUp(idx)"><span class="dot" style="background:@pu.Color;color:@pu.Color"><span style="color:#0b1026">@pu.Symbol</span></span> <span class="pu-name">@pu.Name</span><span class="switch"></span></li>
+					<details class="diag">
+						<summary>Verbindingsinfo</summary>
+						<div>Lobby-code: <b>@_diag.Room[^Math.Min(6, _diag.Room.Length)..]</b> @(_diag.IpOk ? "" : "(IP niet gevonden!)")</div>
+						<div>Signaal-servers: <b>@_diag.Relays / @_diag.RelaysTotal</b> verbonden</div>
+						<div>Directe verbindingen: <b>@_diag.Peers</b></div>
+						<div>Berichten ontvangen: <b>@_diag.Hellos</b></div>
+						<div class="small">Lobby-code moet op alle apparaten gelijk zijn. 0 signaal-servers = netwerk/contentblocker blokkeert ze.</div>
+					</details>
 				}
-			</ul>
-			<ul class="powerups" style="grid-template-columns:1fr;margin-top:.5rem">
-				<li class="toggle @(_keep ? "on" : "off")" @onclick="ToggleKeep"><span class="pu-name">Power-ups blijven staan na een goal</span><span class="switch"></span></li>
-				<li><span class="pu-name">Muurtje: min. bounces</span><button class="btn icon" @onclick="() => SetWall(_wallMin - 1, _wallMax)">−</button><b style="min-width:1.5rem;text-align:center">@_wallMin</b><button class="btn icon" @onclick="() => SetWall(_wallMin + 1, _wallMax)">+</button></li>
-				<li><span class="pu-name">Muurtje: max. bounces</span><button class="btn icon" @onclick="() => SetWall(_wallMin, _wallMax - 1)">−</button><b style="min-width:1.5rem;text-align:center">@_wallMax</b><button class="btn icon" @onclick="() => SetWall(_wallMin, _wallMax + 1)">+</button></li>
-				<li><span class="pu-name">Muurtje: min. grootte</span><button class="btn icon" @onclick="() => SetWallSize(_wallSizeMin - WallSizeStep, _wallSizeMax)">−</button><b style="min-width:2.2rem;text-align:center">@_wallSizeMin</b><button class="btn icon" @onclick="() => SetWallSize(_wallSizeMin + WallSizeStep, _wallSizeMax)">+</button></li>
-				<li><span class="pu-name">Muurtje: max. grootte</span><button class="btn icon" @onclick="() => SetWallSize(_wallSizeMin, _wallSizeMax - WallSizeStep)">−</button><b style="min-width:2.2rem;text-align:center">@_wallSizeMax</b><button class="btn icon" @onclick="() => SetWallSize(_wallSizeMin, _wallSizeMax + WallSizeStep)">+</button></li>
-			</ul>
-			<p class="muted small" style="margin:.6rem 0 0">Max @PongEngine.MaxPickups power-ups tegelijk in het veld. Bij online spelen gelden de instellingen van wie het spel start.</p>
-		</div>
+			}
+
+			<details class="card settings">
+				<summary>⚙ Instellingen <span class="muted small">· power-ups & muurtjes</span></summary>
+				<ul class="powerups">
+					@for (var i = 0; i < PowerUpRegistry.All.Count; i++)
+					{
+						var idx = i;
+						var pu = PowerUpRegistry.All[i];
+						var on = !_disabled.Contains(idx);
+						<li class="toggle @(on ? "on" : "off")" @onclick="() => TogglePowerUp(idx)"><span class="dot" style="background:@pu.Color;color:@pu.Color"><span style="color:#0b1026">@pu.Symbol</span></span> <span class="pu-name">@pu.Name</span><span class="switch"></span></li>
+					}
+				</ul>
+				<ul class="powerups" style="grid-template-columns:1fr;margin-top:.5rem">
+					<li class="toggle @(_keep ? "on" : "off")" @onclick="ToggleKeep"><span class="pu-name">Power-ups blijven staan na een goal</span><span class="switch"></span></li>
+					<li><span class="pu-name">Muurtje: min. bounces</span><button class="btn icon" @onclick="() => SetWall(_wallMin - 1, _wallMax)">−</button><b style="min-width:1.5rem;text-align:center">@_wallMin</b><button class="btn icon" @onclick="() => SetWall(_wallMin + 1, _wallMax)">+</button></li>
+					<li><span class="pu-name">Muurtje: max. bounces</span><button class="btn icon" @onclick="() => SetWall(_wallMin, _wallMax - 1)">−</button><b style="min-width:1.5rem;text-align:center">@_wallMax</b><button class="btn icon" @onclick="() => SetWall(_wallMin, _wallMax + 1)">+</button></li>
+					<li><span class="pu-name">Muurtje: min. grootte</span><button class="btn icon" @onclick="() => SetWallSize(_wallSizeMin - WallSizeStep, _wallSizeMax)">−</button><b style="min-width:2.2rem;text-align:center">@_wallSizeMin</b><button class="btn icon" @onclick="() => SetWallSize(_wallSizeMin + WallSizeStep, _wallSizeMax)">+</button></li>
+					<li><span class="pu-name">Muurtje: max. grootte</span><button class="btn icon" @onclick="() => SetWallSize(_wallSizeMin, _wallSizeMax - WallSizeStep)">−</button><b style="min-width:2.2rem;text-align:center">@_wallSizeMax</b><button class="btn icon" @onclick="() => SetWallSize(_wallSizeMin, _wallSizeMax + WallSizeStep)">+</button></li>
+				</ul>
+				<p class="muted small" style="margin:.6rem 0 0">Max @PongEngine.MaxPickups power-ups tegelijk in het veld. Bij online spelen gelden de instellingen van wie het spel start.</p>
+			</details>
+		}
 	</div>
 }
 
@@ -271,7 +284,17 @@ else
 	private List<int> AiSlots() => Enumerable.Range(1, _teamSize * 2 - 1).Where(s => (_aiMask & (1 << s)) != 0).ToList();
 	private string?[] _localNames = new string?[PongEngine.MaxSlots];
 	private static readonly string[] SlotKeys = ["W / S", "↑ / ↓", "T / G", "I / K"];
-	private string KeyText(int slot) => LocalSlots().Count == 0 ? "W/S of ↑/↓ · of de muis" : SlotKeys[Math.Max(0, new[] { 0 }.Concat(LocalSlots()).ToList().IndexOf(slot))];
+	private int _tab;
+	private bool _touch;
+	private int HostingPeers => _peers.Count(p => p.Hosting);
+
+	// Touch devices (iPad/iPhone) get finger hints, devices with a keyboard get key hints.
+	private string ControlText(int slot)
+	{
+		var local = LocalSlots();
+		if (_touch) return local.Count == 0 ? "👆 sleep over het veld" : $"👆 sleep op de {(slot % 2 == 0 ? "linker" : "rechter")}helft";
+		return local.Count == 0 ? "⌨ W/S, ↑/↓ of muis" : "⌨ " + SlotKeys[Math.Max(0, new[] { 0 }.Concat(local).ToList().IndexOf(slot))];
+	}
 
 	private async Task LocalNameChanged(int slot, ChangeEventArgs e)
 	{
@@ -282,8 +305,8 @@ else
 	private List<int> LocalSlots() => Enumerable.Range(1, _teamSize * 2 - 1).Where(s => (_localMask & (1 << s)) != 0).ToList();
 	private List<int> RemoteSlots() => Enumerable.Range(1, _teamSize * 2 - 1).Except(AiSlots()).Except(LocalSlots()).ToList();
 	private bool IsShared() => _mode == "client" ? _mySlots.Length > 1 : LocalSlots().Count > 0;
-	private const string SharedHint = "Samen op één apparaat: ieder tikt/sleept op de eigen helft of gebruikt de eigen toetsen (staan bij je batje)";
-	private const string SingleHint = "Gebruik W/S, ↑/↓, je muis of sleep met je vinger · beweeg tijdens het raken voor effect";
+	private string SharedHint => _touch ? "Ieder sleept op de eigen helft van het veld" : "Ieder gebruikt de eigen toetsen (staan bij het batje)";
+	private string SingleHint => _touch ? "Sleep met je vinger over het veld · beweeg tijdens het raken voor effect" : "W/S, ↑/↓ of muis · beweeg tijdens het raken voor effect";
 	private bool SharedDevice => _mode is not null && (_mode == "client" ? _mySlots.Select(s => s % 2).Distinct().Count() > 1 : LocalSlots().Any(s => s % 2 == 1));
 
 	private string SetupText()
@@ -440,6 +463,7 @@ else
 			_keep = await JS.InvokeAsync<string?>("localStorage.getItem", "pongKeepPowerUps") == "1";
 			_collide = await JS.InvokeAsync<string?>("localStorage.getItem", "pongPaddlesCollide") != "0";
 			await LoadSetup();
+			_touch = await JS.InvokeAsync<bool>("eval", "matchMedia('(pointer: coarse)').matches && !matchMedia('(any-pointer: fine)').matches");
 			await LoadJoin();
 			var ln = (await JS.InvokeAsync<string?>("localStorage.getItem", "pongLocalNames") ?? "").Split('|');
 			for (var i = 0; i < Math.Min(ln.Length, PongEngine.MaxSlots); i++) _localNames[i] = string.IsNullOrEmpty(ln[i]) ? null : ln[i];
