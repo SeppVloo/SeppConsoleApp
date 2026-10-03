@@ -43,29 +43,39 @@ function slotAt(clientX, clientY) {
     return mine.find(s => (s >> 1) === lane) ?? mine[0];
 }
 
+// One player on this device: both W/S and the arrow keys work. Otherwise every slot has its own pair.
+function keysFor(slot) {
+    if (localSlots.length === 1) return { up: ["KeyW", "ArrowUp"], down: ["KeyS", "ArrowDown"] };
+    const [u, d] = KEYS[slot];
+    return { up: [u], down: [d] };
+}
+
+function slotForKey(code) {
+    return localSlots.find(s => { const k = keysFor(s); return k.up.includes(code) || k.down.includes(code); });
+}
+
 function onKey(e) {
-    const idx = KEYS.findIndex((k, i) => localSlots.includes(i) && k.includes(e.code));
-    if (idx < 0) return;
-    if (e.type === "keydown") keysDown.add(e.code); else keysDown.delete(e.code);
+    if (e.target instanceof HTMLInputElement) return;
+    const slot = slotForKey(e.code);
+    if (slot === undefined) return;
+    if (e.type === "keydown") keysDown.add(e.code);
+    else {
+        keysDown.delete(e.code);
+        const k = keysFor(slot);
+        if (![...k.up, ...k.down].some(c => keysDown.has(c))) { keyActive.delete(slot); setTarget(null, slot); }
+    }
     e.preventDefault();
 }
 
 function keyInput(dt) {
     for (const slot of localSlots) {
-        const [up, down] = KEYS[slot];
-        const dir = (keysDown.has(down) ? 1 : 0) - (keysDown.has(up) ? 1 : 0);
-        if (!dir) { keyActive.delete(slot); continue; }
-        if (!keyActive.has(slot)) { keyActive.add(slot); if (latest?.paddles?.[slot]) keyY[slot] = latest.paddles[slot].y; }
-        keyY[slot]
+        const k = keysFor(slot);
+        const dir = (k.down.some(c => keysDown.has(c)) ? 1 : 0) - (k.up.some(c => keysDown.has(c)) ? 1 : 0);
+        if (!dir) continue;
+        if (!keyActive.has(slot)) { keyActive.add(slot); keyY[slot] = latest?.paddles?.[slot]?.y ?? H / 2; }
+        keyY[slot] = Math.max(0, Math.min(H, keyY[slot] + dir * KEY_SPEED * dt));
         setTarget(keyY[slot], slot);
     }
-}
-
-function keyUpRelease(e) {
-    const slot = KEYS.findIndex((k, i) => localSlots.includes(i) && k.includes(e.code));
-    if (slot < 0) return;
-    const [up, down] = KEYS[slot];
-    if (!keysDown.has(up) && !keysDown.has(down)) setTarget(null, slot);
 }
 
 // mode: "practice" | "host" | "client"
@@ -84,6 +94,7 @@ export function start(el, dotnetRef, gameMode, side, powerUpInfo, slots) {
     last = { hit: -1, score: -1, power: -1, wall: -1 };
 
     canvas.onpointerdown = e => {
+        if (e.pointerType === "mouse" && localSlots.length > 1) return;
         canvas.setPointerCapture(e.pointerId);
         const slot = e.pointerType === "mouse" ? localSide : slotAt(e.clientX, e.clientY);
         pointerSlot.set(e.pointerId, slot);
@@ -92,6 +103,7 @@ export function start(el, dotnetRef, gameMode, side, powerUpInfo, slots) {
     };
     canvas.onpointermove = e => {
         if (!(e.buttons || e.pointerType !== "pen")) return;
+        if (e.pointerType === "mouse" && localSlots.length > 1) return;
         const slot = pointerSlot.get(e.pointerId) ?? (e.pointerType === "mouse" ? localSide : slotAt(e.clientX, e.clientY));
         setTarget(toGameY(e.clientY), slot);
         e.preventDefault();
@@ -101,10 +113,9 @@ export function start(el, dotnetRef, gameMode, side, powerUpInfo, slots) {
         pointerSlot.delete(e.pointerId);
         if (e.pointerType !== "mouse") setTarget(null, slot);
     };
-    canvas.onpointerleave = e => { if (e.pointerType === "mouse") setTarget(null, localSide); };
+    canvas.onpointerleave = e => { if (e.pointerType === "mouse" && localSlots.length === 1) setTarget(null, localSide); };
     window.addEventListener("keydown", onKey);
     window.addEventListener("keyup", onKey);
-    window.addEventListener("keyup", keyUpRelease);
 
     if (mode === "host") {
         link.onInput = (slot, y) => dotnet.invokeMethod("SetTarget", slot, y);
@@ -122,8 +133,7 @@ export function stop() {
     resizeObs?.disconnect(); resizeObs = null;
     window.removeEventListener("keydown", onKey);
     window.removeEventListener("keyup", onKey);
-    window.removeEventListener("keyup", keyUpRelease);
-    keysDown.clear();
+    keysDown.clear(); keyActive.clear();
     link.onState = link.onInput = link.onCmd = null;
 }
 

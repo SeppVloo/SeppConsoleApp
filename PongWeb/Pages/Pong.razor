@@ -19,7 +19,7 @@
 			</span>
 		</div>
 		<canvas @ref="_canvas" width="800" height="450" class="pong-canvas"></canvas>
-		<div class="hint">@(_mode != "client" && LocalSlots().Count > 0 ? "Samen op één apparaat: ieder tikt/sleept op de eigen helft · toetsen: W/S, ↑/↓, I/K, T/G" : "Sleep met je vinger of beweeg je muis over het veld · beweeg tijdens het raken voor effect")</div>
+		<div class="hint">@(_mode != "client" && LocalSlots().Count > 0 ? "Samen op één apparaat: ieder tikt/sleept op de eigen helft of gebruikt de eigen toetsen" : "Gebruik W/S, ↑/↓, je muis of sleep met je vinger · beweeg tijdens het raken voor effect")</div>
 	</div>
 }
 else
@@ -81,12 +81,18 @@ else
 								if (slot == 0)
 								{
 									<div class="seat me">🙂 Jij</div>
+									<div class="muted small" style="text-align:center">⌨ @KeyText(0)</div>
 								}
 								else
 								{
 									var ai = (_aiMask & (1 << slot)) != 0;
 									var local = (_localMask & (1 << slot)) != 0;
 									<button class="btn seat @(ai ? "ai" : local ? "local" : "")" @onclick="() => ToggleSeat(slot)">@(ai ? "🤖 Computer" : local ? "📱 Op dit apparaat" : "👤 Speler")</button>
+									@if (local)
+									{
+										<input class="input" placeholder="Naam" value="@_localNames[slot]" maxlength="20" @onchange="e => LocalNameChanged(slot, e)" />
+										<div class="muted small" style="text-align:center">⌨ @KeyText(slot)</div>
+									}
 									@if (ai)
 									{
 										<div class="seg speed">
@@ -241,6 +247,16 @@ else
 	private List<string> _lobbyPlayers = [];
 
 	private List<int> AiSlots() => Enumerable.Range(1, _teamSize * 2 - 1).Where(s => (_aiMask & (1 << s)) != 0).ToList();
+	private string?[] _localNames = new string?[PongEngine.MaxSlots];
+	private static readonly string[] SlotKeys = ["W / S", "↑ / ↓", "T / G", "I / K"];
+	private string KeyText(int slot) => LocalSlots().Count == 0 ? "W/S of ↑/↓ · of de muis" : SlotKeys[slot];
+
+	private async Task LocalNameChanged(int slot, ChangeEventArgs e)
+	{
+		_localNames[slot] = e.Value?.ToString()?.Trim();
+		await JS.InvokeVoidAsync("localStorage.setItem", "pongLocalNames", string.Join("|", _localNames.Select(n => n ?? "")));
+	}
+
 	private List<int> LocalSlots() => Enumerable.Range(1, _teamSize * 2 - 1).Where(s => (_localMask & (1 << s)) != 0).ToList();
 	private List<int> RemoteSlots() => Enumerable.Range(1, _teamSize * 2 - 1).Except(AiSlots()).Except(LocalSlots()).ToList();
 	private bool SharedDevice => _mode is not null && LocalSlots().Any(s => s % 2 == 1);
@@ -384,7 +400,7 @@ else
 		var names = BotNames.OrderBy(_ => Random.Shared.Next()).ToArray();
 		var i = 0;
 		foreach (var s in AiSlots()) _slotNames[s] = names[i++];
-		foreach (var s in LocalSlots()) _slotNames[s] = $"Speler {s + 1}";
+		foreach (var s in LocalSlots()) _slotNames[s] = string.IsNullOrWhiteSpace(_localNames[s]) ? $"Speler {s + 1}" : _localNames[s]!;
 	}
 
 	protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -399,6 +415,8 @@ else
 			_keep = await JS.InvokeAsync<string?>("localStorage.getItem", "pongKeepPowerUps") == "1";
 			_collide = await JS.InvokeAsync<string?>("localStorage.getItem", "pongPaddlesCollide") != "0";
 			await LoadSetup();
+			var ln = (await JS.InvokeAsync<string?>("localStorage.getItem", "pongLocalNames") ?? "").Split('|');
+			for (var i = 0; i < Math.Min(ln.Length, PongEngine.MaxSlots); i++) _localNames[i] = string.IsNullOrEmpty(ln[i]) ? null : ln[i];
 			await LoadSkill();
 			_pong = await JS.InvokeAsync<IJSObjectReference>("import", "./js/pong.js");
 			_net = await JS.InvokeAsync<IJSObjectReference>("import", "./js/net.js");
