@@ -1,0 +1,104 @@
+@page "/2048"
+@using Game2048.Game
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+
+<PageTitle>2048 – Sepps GameCenter</PageTitle>
+
+<div class="g2048">
+    <div class="g2048-head">
+        <a class="g2048-back" href="./">← GameCenter</a>
+        <h1 class="g2048-logo">2048</h1>
+        <div class="g2048-scores">
+            <div class="g2048-score"><span>Score</span><b>@_engine.Score</b></div>
+            <div class="g2048-score"><span>Beste</span><b>@_best</b></div>
+        </div>
+    </div>
+
+    <div class="g2048-bar">
+        <span class="g2048-hint">@(_touch ? "Veeg om de tegels te schuiven" : "Pijltjes of W/A/S/D om te schuiven")</span>
+        <button class="g2048-btn" @onclick="NewGame">Nieuw spel</button>
+    </div>
+
+    <div class="g2048-board" @ref="_board" style="--n:@_engine.Size">
+        @for (int i = 0; i < _engine.Size * _engine.Size; i++)
+        {
+            <div class="g2048-cell"></div>
+        }
+        @foreach (var t in _engine.RenderTiles())
+        {
+            <div @key="t.Id" class="g2048-tile @TileClass(t)" style="--r:@t.Row;--c:@t.Col">
+                <div class="g2048-inner">@t.Value</div>
+            </div>
+        }
+
+        @if (_engine.GameOver)
+        {
+            <div class="g2048-overlay">
+                <h2>Game over</h2>
+                <p>Score @_engine.Score · hoogste tegel @_engine.MaxTile</p>
+                <button class="g2048-btn" @onclick="NewGame">Opnieuw</button>
+            </div>
+        }
+        else if (_engine.Won && !_engine.KeepPlaying)
+        {
+            <div class="g2048-overlay win">
+                <h2>🎉 2048!</h2>
+                <p>Score @_engine.Score in @_engine.Moves zetten</p>
+                <div class="g2048-row">
+                    <button class="g2048-btn" @onclick="Continue">Doorspelen</button>
+                    <button class="g2048-btn ghost" @onclick="NewGame">Nieuw spel</button>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private const string BestKey = "g2048.best";
+    private readonly Game2048Engine _engine = new();
+    private ElementReference _board;
+    private DotNetObjectReference<Game2048Page>? _self;
+    private IJSObjectReference? _js;
+    private int _best;
+    private bool _touch;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        _js = await JS.InvokeAsync<IJSObjectReference>("import", "./_content/Game2048/game2048.js");
+        _self = DotNetObjectReference.Create(this);
+        await _js.InvokeVoidAsync("init", _self, _board);
+        _touch = await JS.InvokeAsync<bool>("eval", "matchMedia('(pointer: coarse)').matches");
+        _best = int.TryParse(await _js.InvokeAsync<string?>("load", BestKey), out var b) ? b : 0;
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public async Task OnMove(string dir)
+    {
+        if (!Enum.TryParse<Direction>(dir, out var d) || !_engine.Move(d)) return;
+        if (_engine.Score > _best)
+        {
+            _best = _engine.Score;
+            if (_js is not null) await _js.InvokeVoidAsync("save", BestKey, _best.ToString());
+        }
+        StateHasChanged();
+    }
+
+    private void NewGame() => _engine.Reset();
+    private void Continue() => _engine.KeepPlaying = true;
+
+    private static string TileClass(Tile t) =>
+        $"v{Math.Min(t.Value, 4096)}{(t.IsNew ? " new" : "")}{(t.Merged ? " merged" : "")}";
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            if (_js is not null) { await _js.InvokeVoidAsync("dispose"); await _js.DisposeAsync(); }
+        }
+        catch (JSDisconnectedException) { }
+        _self?.Dispose();
+    }
+}

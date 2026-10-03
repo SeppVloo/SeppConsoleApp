@@ -4,6 +4,7 @@
     <Platform Name="x64" />
     <Platform Name="x86" />
   </Configurations>
+  <Project Path="Game2048/Game2048.csproj" />
   <Project Path="PongWeb/PongWeb.csproj" />
   <Project Path="PongWinForms/PongWinForms.csproj" />
   <Project Path="Sepp2048Web/Sepp2048Web.csproj" />
