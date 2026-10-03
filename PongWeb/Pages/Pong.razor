@@ -19,7 +19,7 @@
 			</span>
 		</div>
 		<canvas @ref="_canvas" width="800" height="450" class="pong-canvas"></canvas>
-		<div class="hint">@(_mode != "client" && LocalSlots().Count > 0 ? "Samen op één apparaat: ieder tikt/sleept op de eigen helft of gebruikt de eigen toetsen" : "Gebruik W/S, ↑/↓, je muis of sleep met je vinger · beweeg tijdens het raken voor effect")</div>
+		<div class="hint">@(IsShared() ? SharedHint : SingleHint)</div>
 	</div>
 }
 else
@@ -54,6 +54,7 @@ else
 			<div class="card waiting">
 				<div class="radar"></div>
 				<p>Wachten op spelers... (@_lobbyPlayers.Count / @RemoteSlots().Count)</p>
+				<p class="muted small">Eén apparaat mag meerdere spelers meenemen.</p>
 				@if (_lobbyPlayers.Count > 0)
 				{
 					<p class="muted small">@string.Join(", ", _lobbyPlayers)</p>
@@ -128,6 +129,27 @@ else
 				else if (_peers.All(p => !p.Hosting))
 				{
 					<p class="empty small">Nog niemand gevonden. Laat iemand anders "Nieuw spel starten" kiezen.</p>
+				}
+				@if (_peers.Any(p => p.Hosting))
+				{
+					<label style="margin-top:.25rem">SPELERS OP DIT APPARAAT BIJ MEEDOEN</label>
+					<div class="seg">
+						@for (var n = 1; n <= 3; n++)
+						{
+							var c = n;
+							<button class="btn @(_joinCount == c ? "sel" : "")" @onclick="() => SetJoinCount(c)">@c</button>
+						}
+					</div>
+					@if (_joinCount > 1)
+					{
+						<div class="muted small">🙂 @_name · ⌨ W/S</div>
+						@for (var j = 1; j < _joinCount; j++)
+						{
+							var ji = j;
+							<input class="input" placeholder="Naam speler @(ji + 1)" value="@_joinNames[ji]" maxlength="20" @onchange="e => JoinNameChanged(ji, e)" />
+						}
+						<p class="muted small" style="margin:0 0 .5rem">Toetsen hangen af van de plek die je krijgt (W/S, ↑/↓, T/G, I/K) en staan bij de start in beeld.</p>
+					}
 				}
 				@foreach (var peer in _peers.Where(p => p.Hosting))
 				{
@@ -249,7 +271,7 @@ else
 	private List<int> AiSlots() => Enumerable.Range(1, _teamSize * 2 - 1).Where(s => (_aiMask & (1 << s)) != 0).ToList();
 	private string?[] _localNames = new string?[PongEngine.MaxSlots];
 	private static readonly string[] SlotKeys = ["W / S", "↑ / ↓", "T / G", "I / K"];
-	private string KeyText(int slot) => LocalSlots().Count == 0 ? "W/S of ↑/↓ · of de muis" : SlotKeys[slot];
+	private string KeyText(int slot) => LocalSlots().Count == 0 ? "W/S of ↑/↓ · of de muis" : SlotKeys[Math.Max(0, new[] { 0 }.Concat(LocalSlots()).ToList().IndexOf(slot))];
 
 	private async Task LocalNameChanged(int slot, ChangeEventArgs e)
 	{
@@ -259,7 +281,10 @@ else
 
 	private List<int> LocalSlots() => Enumerable.Range(1, _teamSize * 2 - 1).Where(s => (_localMask & (1 << s)) != 0).ToList();
 	private List<int> RemoteSlots() => Enumerable.Range(1, _teamSize * 2 - 1).Except(AiSlots()).Except(LocalSlots()).ToList();
-	private bool SharedDevice => _mode is not null && LocalSlots().Any(s => s % 2 == 1);
+	private bool IsShared() => _mode == "client" ? _mySlots.Length > 1 : LocalSlots().Count > 0;
+	private const string SharedHint = "Samen op één apparaat: ieder tikt/sleept op de eigen helft of gebruikt de eigen toetsen (staan bij je batje)";
+	private const string SingleHint = "Gebruik W/S, ↑/↓, je muis of sleep met je vinger · beweeg tijdens het raken voor effect";
+	private bool SharedDevice => _mode is not null && (_mode == "client" ? _mySlots.Select(s => s % 2).Distinct().Count() > 1 : LocalSlots().Any(s => s % 2 == 1));
 
 	private string SetupText()
 	{
@@ -415,6 +440,7 @@ else
 			_keep = await JS.InvokeAsync<string?>("localStorage.getItem", "pongKeepPowerUps") == "1";
 			_collide = await JS.InvokeAsync<string?>("localStorage.getItem", "pongPaddlesCollide") != "0";
 			await LoadSetup();
+			await LoadJoin();
 			var ln = (await JS.InvokeAsync<string?>("localStorage.getItem", "pongLocalNames") ?? "").Split('|');
 			for (var i = 0; i < Math.Min(ln.Length, PongEngine.MaxSlots); i++) _localNames[i] = string.IsNullOrEmpty(ln[i]) ? null : ln[i];
 			await LoadSkill();
@@ -437,7 +463,7 @@ else
 		{
 			_startCanvas = false;
 			var info = PowerUpRegistry.All.Select(p => new { color = p.Color, symbol = p.Symbol });
-			var localSlots = _mode == "client" ? new[] { _side } : new[] { 0 }.Concat(LocalSlots()).ToArray();
+			var localSlots = _mode == "client" ? _mySlots : new[] { 0 }.Concat(LocalSlots()).ToArray();
 			await _pong.InvokeVoidAsync("start", _canvas, _self, _mode, _side, info, localSlots);
 		}
 	}
@@ -477,7 +503,34 @@ else
 	private async Task Join(string peerId)
 	{
 		_status = "Verbinden...";
-		await _net!.InvokeVoidAsync("join", peerId);
+		var names = new[] { _name }.Concat(Enumerable.Range(1, _joinCount - 1).Select(i => string.IsNullOrWhiteSpace(_joinNames[i]) ? $"Speler {i + 1}" : _joinNames[i]!)).ToArray();
+		await _net!.InvokeVoidAsync("join", peerId, names);
+	}
+
+	private int _joinCount = 1;
+	private string?[] _joinNames = new string?[3];
+	private int[] _mySlots = [0];
+
+	private async Task SetJoinCount(int n)
+	{
+		_joinCount = n;
+		await SaveJoin();
+	}
+
+	private async Task JoinNameChanged(int i, ChangeEventArgs e)
+	{
+		_joinNames[i] = e.Value?.ToString()?.Trim();
+		await SaveJoin();
+	}
+
+	private async Task SaveJoin() =>
+		await JS.InvokeVoidAsync("localStorage.setItem", "pongJoin", $"{_joinCount}|{string.Join("|", _joinNames.Skip(1).Select(n => n ?? ""))}");
+
+	private async Task LoadJoin()
+	{
+		var v = (await JS.InvokeAsync<string?>("localStorage.getItem", "pongJoin") ?? "").Split('|');
+		if (int.TryParse(v[0], out var n)) _joinCount = Math.Clamp(n, 1, 3);
+		for (var i = 1; i < Math.Min(v.Length, 3); i++) _joinNames[i] = string.IsNullOrEmpty(v[i]) ? null : v[i];
 	}
 
 	private void BeginGame(string mode, int side)
@@ -539,8 +592,10 @@ else
 	}
 
 	[JSInvokable]
-	public void OnGameStart(int slot, List<SlotName> remote)
+	public void OnGameStart(int[] slots, List<SlotName> remote)
 	{
+		var slot = slots.Length > 0 ? slots[0] : 0;
+		_mySlots = slots;
 		if (slot == 0)
 		{
 			foreach (var r in remote) _slotNames[r.Slot] = r.Name;

@@ -19,7 +19,7 @@ function toGameY(clientY) {
 }
 
 function setTarget(y, slot = localSide) {
-    if (mode === "client") link.sendInput(y);
+    if (mode === "client") link.sendInput(y, slot);
     else dotnet.invokeMethod("SetTarget", slot, y);
 }
 
@@ -46,7 +46,7 @@ function slotAt(clientX, clientY) {
 // One player on this device: both W/S and the arrow keys work. Otherwise every slot has its own pair.
 function keysFor(slot) {
     if (localSlots.length === 1) return { up: ["KeyW", "ArrowUp"], down: ["KeyS", "ArrowDown"] };
-    const [u, d] = KEYS[slot];
+    const [u, d] = KEYS[Math.max(0, localSlots.indexOf(slot))];
     return { up: [u], down: [d] };
 }
 
@@ -153,6 +153,7 @@ function loop(now) {
     lastTime = now;
 
     keyInput(dt);
+    frame++;
     if (mode !== "client") {
         latest = dotnet.invokeMethod("Tick", dt);
         if (mode === "host") link.sendState(latest);
@@ -342,6 +343,15 @@ function draw(raw, dt) {
 
     // Paddles
     s.paddles.forEach((p, i) => paddle(p.x, p.y, p.h, p, localSlots.includes(i)));
+    if (localSlots.length > 1 && frame < 400) {
+        const labels = ["W/S", "↑/↓", "T/G", "I/K"];
+        ctx.font = "700 14px system-ui, sans-serif";
+        ctx.fillStyle = "rgba(255,255,255,0.8)";
+        localSlots.forEach((slot, idx) => {
+            const p = s.paddles[slot];
+            if (p) ctx.fillText(labels[idx], p.x + (slot % 2 === 0 ? 40 : -28), p.y);
+        });
+    }
 
     // Power-up
     for (const pu of (s.powerUps || [])) {
