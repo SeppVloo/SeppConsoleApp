@@ -1,0 +1,13 @@
+<Solution>
+  <Configurations>
+    <Platform Name="Any CPU" />
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Project Path="PongWeb/PongWeb.csproj" />
+  <Project Path="PongWinForms/PongWinForms.csproj" />
+  <Project Path="Sepp2048Web/Sepp2048Web.csproj" />
+  <Project Path="SeppConsoleApp/SeppConsoleApp.csproj" />
+  <Project Path="SeppWinFormsApp/SeppWinFormsApp.csproj" />
+  <Project Path="SteenPapierSchaar/SteenPapierSchaar.csproj" />
+</Solution>

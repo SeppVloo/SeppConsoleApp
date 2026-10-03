@@ -125,6 +125,7 @@ html, body {
 .seat.me { background: #22d3ee22; border: 1px solid #22d3ee66; color: var(--cyan); }
 .btn.seat { width: 100%; }
 .btn.seat.ai { background: #f472b61a; border-color: #f472b655; }
+.btn.seat.local { background: #a3e6351a; border-color: #a3e63555; }
 .seg.speed { gap: .25rem; }
 .seg.speed .btn { padding: .3rem 0; font-size: 1rem; }
 .powerups li .btn.icon { padding: .2rem .6rem; }

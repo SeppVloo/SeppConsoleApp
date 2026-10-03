@@ -18,13 +18,58 @@ function toGameY(clientY) {
     return (clientY - r.top) / r.height * H;
 }
 
-function setTarget(y) {
+function setTarget(y, slot = localSide) {
     if (mode === "client") link.sendInput(y);
-    else dotnet.invokeMethod("SetTarget", localSide, y);
+    else dotnet.invokeMethod("SetTarget", slot, y);
+}
+
+// ---------- Several players on one device ----------
+let localSlots = [0], shared = false;
+const pointerSlot = new Map();
+const KEYS = [["KeyW", "KeyS"], ["ArrowUp", "ArrowDown"], ["KeyT", "KeyG"], ["KeyI", "KeyK"]];
+const keysDown = new Set(), keyActive = new Set();
+const keyY = [H / 2, H / 2, H / 2, H / 2];
+const KEY_SPEED = 650;
+
+// Touch: left half = left team, right half = right team; in 2v2 top/bottom picks the lane.
+function slotAt(clientX, clientY) {
+    if (localSlots.length === 1) return localSlots[0];
+    const r = canvas.getBoundingClientRect();
+    const team = clientX - r.left < r.width / 2 ? 0 : 1;
+    const y = toGameY(clientY);
+    const mine = localSlots.filter(s => s % 2 === team);
+    if (mine.length === 0) return localSide;
+    const lane = y < H / 2 ? 0 : 1;
+    return mine.find(s => (s >> 1) === lane) ?? mine[0];
+}
+
+function onKey(e) {
+    const idx = KEYS.findIndex((k, i) => localSlots.includes(i) && k.includes(e.code));
+    if (idx < 0) return;
+    if (e.type === "keydown") keysDown.add(e.code); else keysDown.delete(e.code);
+    e.preventDefault();
+}
+
+function keyInput(dt) {
+    for (const slot of localSlots) {
+        const [up, down] = KEYS[slot];
+        const dir = (keysDown.has(down) ? 1 : 0) - (keysDown.has(up) ? 1 : 0);
+        if (!dir) { keyActive.delete(slot); continue; }
+        if (!keyActive.has(slot)) { keyActive.add(slot); if (latest?.paddles?.[slot]) keyY[slot] = latest.paddles[slot].y; }
+        keyY[slot]
+        setTarget(keyY[slot], slot);
+    }
+}
+
+function keyUpRelease(e) {
+    const slot = KEYS.findIndex((k, i) => localSlots.includes(i) && k.includes(e.code));
+    if (slot < 0) return;
+    const [up, down] = KEYS[slot];
+    if (!keysDown.has(up) && !keysDown.has(down)) setTarget(null, slot);
 }
 
 // mode: "practice" | "host" | "client"
-export function start(el, dotnetRef, gameMode, side, powerUpInfo) {
+export function start(el, dotnetRef, gameMode, side, powerUpInfo, slots) {
     stop();
     canvas = el; ctx = canvas.getContext("2d", { alpha: false });
     resize();
@@ -32,13 +77,34 @@ export function start(el, dotnetRef, gameMode, side, powerUpInfo) {
     buffer.length = 0;
     trail.length = 0;
     dotnet = dotnetRef; mode = gameMode; localSide = side; powerUps = powerUpInfo;
+    localSlots = slots && slots.length ? slots : [side];
+    shared = localSlots.some(s => s % 2 === 0) && localSlots.some(s => s % 2 === 1);
+    pointerSlot.clear(); keysDown.clear();
     latest = null; frame = 0; lastTime = performance.now();
     last = { hit: -1, score: -1, power: -1, wall: -1 };
 
-    canvas.onpointerdown = e => { canvas.setPointerCapture(e.pointerId); setTarget(toGameY(e.clientY)); e.preventDefault(); };
-    canvas.onpointermove = e => { if (e.buttons || e.pointerType !== "pen") setTarget(toGameY(e.clientY)); e.preventDefault(); };
-    canvas.onpointerup = canvas.onpointercancel = e => { if (e.pointerType !== "mouse") setTarget(null); };
-    canvas.onpointerleave = e => { if (e.pointerType === "mouse") setTarget(null); };
+    canvas.onpointerdown = e => {
+        canvas.setPointerCapture(e.pointerId);
+        const slot = e.pointerType === "mouse" ? localSide : slotAt(e.clientX, e.clientY);
+        pointerSlot.set(e.pointerId, slot);
+        setTarget(toGameY(e.clientY), slot);
+        e.preventDefault();
+    };
+    canvas.onpointermove = e => {
+        if (!(e.buttons || e.pointerType !== "pen")) return;
+        const slot = pointerSlot.get(e.pointerId) ?? (e.pointerType === "mouse" ? localSide : slotAt(e.clientX, e.clientY));
+        setTarget(toGameY(e.clientY), slot);
+        e.preventDefault();
+    };
+    canvas.onpointerup = canvas.onpointercancel = e => {
+        const slot = pointerSlot.get(e.pointerId) ?? localSide;
+        pointerSlot.delete(e.pointerId);
+        if (e.pointerType !== "mouse") setTarget(null, slot);
+    };
+    canvas.onpointerleave = e => { if (e.pointerType === "mouse") setTarget(null, localSide); };
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("keyup", onKey);
+    window.addEventListener("keyup", keyUpRelease);
 
     if (mode === "host") {
         link.onInput = (slot, y) => dotnet.invokeMethod("SetTarget", slot, y);
@@ -54,6 +120,10 @@ export function stop() {
     cancelAnimationFrame(raf);
     raf = 0;
     resizeObs?.disconnect(); resizeObs = null;
+    window.removeEventListener("keydown", onKey);
+    window.removeEventListener("keyup", onKey);
+    window.removeEventListener("keyup", keyUpRelease);
+    keysDown.clear();
     link.onState = link.onInput = link.onCmd = null;
 }
 
@@ -72,6 +142,7 @@ function loop(now) {
     const dt = Math.min((now - lastTime) / 1000, 0.1);
     lastTime = now;
 
+    keyInput(dt);
     if (mode !== "client") {
         latest = dotnet.invokeMethod("Tick", dt);
         if (mode === "host") link.sendState(latest);
@@ -260,7 +331,7 @@ function draw(raw, dt) {
     }
 
     // Paddles
-    s.paddles.forEach((p, i) => paddle(p.x, p.y, p.h, p, i === localSide));
+    s.paddles.forEach((p, i) => paddle(p.x, p.y, p.h, p, localSlots.includes(i)));
 
     // Power-up
     for (const pu of (s.powerUps || [])) {
@@ -339,11 +410,11 @@ function draw(raw, dt) {
     if (s.winner >= 0) {
         ctx.fillStyle = "rgba(2,4,14,0.85)";
         ctx.fillRect(0, 0, W, H);
-        const won = s.winner === localSide % 2;
+        const won = shared || s.winner === localSide % 2;
         droneShow(s.winnerName || (won ? "Jij" : "Winnaar"), won ? C.me : C.them, dt, now);
         ctx.fillStyle = "#fff";
         ctx.font = "800 30px system-ui, sans-serif";
-        ctx.fillText(won ? "Jij wint! 🎉" : "Verloren", W / 2, H - 70);
+        ctx.fillText(shared ? `${s.winnerName || "Winnaar"} wint! 🎉` : won ? "Jij wint! 🎉" : "Verloren", W / 2, H - 70);
         ctx.font = "500 16px system-ui, sans-serif";
         ctx.fillStyle = "rgba(255,255,255,0.7)";
         ctx.fillText(`${s.leftScore} – ${s.rightScore}  ·  tik op ↻ voor revanche`, W / 2, H - 38);

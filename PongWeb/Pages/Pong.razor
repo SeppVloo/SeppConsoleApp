@@ -19,7 +19,7 @@
 			</span>
 		</div>
 		<canvas @ref="_canvas" width="800" height="450" class="pong-canvas"></canvas>
-		<div class="hint">Sleep met je vinger of beweeg je muis over het veld · beweeg tijdens het raken voor effect</div>
+		<div class="hint">@(_mode != "client" && LocalSlots().Count > 0 ? "Samen op één apparaat: ieder tikt/sleept op de eigen helft · toetsen: W/S, ↑/↓, I/K, T/G" : "Sleep met je vinger of beweeg je muis over het veld · beweeg tijdens het raken voor effect")</div>
 	</div>
 }
 else
@@ -85,7 +85,8 @@ else
 								else
 								{
 									var ai = (_aiMask & (1 << slot)) != 0;
-									<button class="btn seat @(ai ? "ai" : "")" @onclick="() => ToggleSeat(slot)">@(ai ? "🤖 Computer" : "👤 Speler")</button>
+									var local = (_localMask & (1 << slot)) != 0;
+									<button class="btn seat @(ai ? "ai" : local ? "local" : "")" @onclick="() => ToggleSeat(slot)">@(ai ? "🤖 Computer" : local ? "📱 Op dit apparaat" : "👤 Speler")</button>
 									@if (ai)
 									{
 										<div class="seg speed">
@@ -101,7 +102,7 @@ else
 						</div>
 					}
 				</div>
-				<p class="muted small" style="margin:.5rem 0 0">Tik op een plek om te wisselen tussen speler en computer.</p>
+				<p class="muted small" style="margin:.5rem 0 0">Tik op een plek om te wisselen tussen speler (ander apparaat), computer en speler op dit apparaat.</p>
 				@if (_teamSize == 2)
 				{
 					<ul class="powerups" style="grid-template-columns:1fr;margin-top:.5rem">
@@ -233,19 +234,22 @@ else
 	}
 
 	// --- Game setup ---
-	private int _teamSize = 1, _aiMask = 0b0010, _wallMin = 3, _wallMax = 3;
+	private int _teamSize = 1, _aiMask = 0b0010, _localMask = 0, _wallMin = 3, _wallMax = 3;
 	private const int WallSizeStep = 10;
 	private int _wallSizeMin = 110, _wallSizeMax = 110;
 	private string[] _slotNames = new string[PongEngine.MaxSlots];
 	private List<string> _lobbyPlayers = [];
 
 	private List<int> AiSlots() => Enumerable.Range(1, _teamSize * 2 - 1).Where(s => (_aiMask & (1 << s)) != 0).ToList();
-	private List<int> RemoteSlots() => Enumerable.Range(1, _teamSize * 2 - 1).Except(AiSlots()).ToList();
+	private List<int> LocalSlots() => Enumerable.Range(1, _teamSize * 2 - 1).Where(s => (_localMask & (1 << s)) != 0).ToList();
+	private List<int> RemoteSlots() => Enumerable.Range(1, _teamSize * 2 - 1).Except(AiSlots()).Except(LocalSlots()).ToList();
+	private bool SharedDevice => _mode is not null && LocalSlots().Any(s => s % 2 == 1);
 
 	private string SetupText()
 	{
 		var ai = AiSlots();
-		string Who(int s) => s == 0 ? "Jij" : ai.Contains(s) ? "🤖" : "👤";
+		var local = LocalSlots();
+		string Who(int s) => s == 0 ? "Jij" : ai.Contains(s) ? "🤖" : local.Contains(s) ? "📱" : "👤";
 		var teams = string.Join(" vs ", Enumerable.Range(0, 2).Select(t =>
 			string.Join(" + ", Enumerable.Range(0, _teamSize * 2).Where(s => s % 2 == t).Select(Who))));
 		var r = RemoteSlots().Count;
@@ -318,7 +322,11 @@ else
 
 	private async Task ToggleSeat(int slot)
 	{
-		_aiMask ^= 1 << slot;
+		// Cycle: other device → computer → this device → other device
+		var bit = 1 << slot;
+		if ((_aiMask & bit) != 0) { _aiMask &= ~bit; _localMask |= bit; }
+		else if ((_localMask & bit) != 0) _localMask &= ~bit;
+		else _aiMask |= bit;
 		await SaveSetup();
 	}
 
@@ -343,18 +351,19 @@ else
 	}
 
 	private async Task SaveSetup() =>
-		await JS.InvokeVoidAsync("localStorage.setItem", "pongSetup2", $"{_teamSize},{_aiMask},{_wallMin},{_wallMax},{_wallSizeMin},{_wallSizeMax},{string.Join('-', _aiLevel)}");
+		await JS.InvokeVoidAsync("localStorage.setItem", "pongSetup2", $"{_teamSize},{_aiMask},{_wallMin},{_wallMax},{_wallSizeMin},{_wallSizeMax},{string.Join('-', _aiLevel)},{_localMask}");
 
 	private async Task LoadSetup()
 	{
 		var v = await JS.InvokeAsync<string?>("localStorage.getItem", "pongSetup2");
 		var raw = (v ?? "").Split(',');
-		if (raw.Length == 7)
+		if (raw.Length >= 7)
 			_aiLevel = raw[6].Split('-').Select(x => int.TryParse(x, out var n) ? Math.Clamp(n, 0, AiLevels.Length - 1) : 1).Concat(Enumerable.Repeat(1, 4)).Take(4).ToArray();
 		var p = raw.Take(6).Select(x => int.TryParse(x, out var n) ? n : 0).ToArray();
 		if (p.Length != 6) return;
 		_teamSize = Math.Clamp(p[0], 1, 2);
 		_aiMask = p[1] & 0b1110;
+		_localMask = raw.Length >= 8 && int.TryParse(raw[7], out var lm) ? lm & 0b1110 & ~_aiMask : 0;
 		_wallMin = Math.Clamp(p[2], 1, 10);
 		_wallMax = Math.Clamp(p[3], _wallMin, 10);
 		_wallSizeMin = Math.Clamp(p[4], 30, 250);
@@ -375,6 +384,7 @@ else
 		var names = BotNames.OrderBy(_ => Random.Shared.Next()).ToArray();
 		var i = 0;
 		foreach (var s in AiSlots()) _slotNames[s] = names[i++];
+		foreach (var s in LocalSlots()) _slotNames[s] = $"Speler {s + 1}";
 	}
 
 	protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -409,7 +419,8 @@ else
 		{
 			_startCanvas = false;
 			var info = PowerUpRegistry.All.Select(p => new { color = p.Color, symbol = p.Symbol });
-			await _pong.InvokeVoidAsync("start", _canvas, _self, _mode, _side, info);
+			var localSlots = _mode == "client" ? new[] { _side } : new[] { 0 }.Concat(LocalSlots()).ToArray();
+			await _pong.InvokeVoidAsync("start", _canvas, _self, _mode, _side, info, localSlots);
 		}
 	}
 
@@ -559,7 +570,7 @@ else
 		for (var i = 0; i < n; i++) _engine.Tick(dt / n);
 		var snap = _engine.Snapshot();
 		if (snap.Winner < 0) _resultCounted = false;
-		else if (!_resultCounted) { _resultCounted = true; _ = RecordResult(snap); }
+		else if (!_resultCounted) { _resultCounted = true; if (!SharedDevice) _ = RecordResult(snap); }
 		return snap;
 	}
 
