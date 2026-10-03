@@ -31,7 +31,7 @@ else
 
 		@if (_status is not null)
 		{
-			<div class="status">@_status</div>
+			<div class="status"><span>@_status</span><button class="close" title="Sluiten" @onclick="() => _status = null">✕</button></div>
 		}
 
 		@if (_hosting)

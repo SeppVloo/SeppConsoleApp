@@ -66,6 +66,7 @@ public sealed class PongEngine
     private float _bx, _by, _vx, _vy;
     private float _spin;                                  // curve of the ball (units/s² on vy)
     private const float MaxSpin = 1600f;
+    private const float SpinKeptPerBounce = 0.55f;
     private readonly float[] _pv = new float[MaxSlots];   // smoothed paddle velocity
     private readonly float[] _py = new float[MaxSlots];
     private readonly float[] _ph = new float[MaxSlots];
@@ -142,13 +143,14 @@ public sealed class PongEngine
 
         float f = _mods.BallSpeedFactor;
         _vy += _spin * dt;
-        _spin *= MathF.Pow(0.4f, dt);
+        _spin *= MathF.Pow(0.6f, dt);
         _prevBx = _bx; _prevBy = _by;
         _bx += _vx * f * dt;
         _by += _vy * f * dt;
 
-        if (_by < 0) { _by = 0; _vy = Math.Abs(_vy); }
-        else if (_by + GameState.BallSize > H) { _by = H - GameState.BallSize; _vy = -Math.Abs(_vy); }
+        // Bouncing off the top/bottom mirrors the curve and keeps part of it, so effect fades out exponentially per bounce.
+        if (_by < 0) { _by = 0; _vy = Math.Abs(_vy); _spin = -_spin * SpinKeptPerBounce; }
+        else if (_by + GameState.BallSize > H) { _by = H - GameState.BallSize; _vy = -Math.Abs(_vy); _spin = -_spin * SpinKeptPerBounce; }
 
         RotateWalls(dt);
         for (int i = _walls.Count - 1; i >= 0; i--) HitWall(i);

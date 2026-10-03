@@ -466,54 +466,141 @@ function nameTargets(text) {
 }
 
 function droneShow(name, color, dt, now) {
-    if (!drones || drones.name !== name) {
-        const text = nameTargets(name);
-        const n = text.length;
-        const cup = trophyTargets(n);
-        drones = {
-            name, start: now,
-            list: text.map((t, i) => ({
-                x: W * (0.1 + 0.8 * Math.random()), y: H + 20 + Math.random() * 60,
-                tx: t.x, ty: t.y, cx: cup[i].x, cy: cup[i].y,
-                a: (i / n) * Math.PI * 2, r: 60 + (i % 5) * 22,
-                hue: [color, "#fde047", "#ffffff"][i % 3],
-            })),
-        };
+    if (!drones || drones.name !== name) drones = newDroneShow(name, color, now);
+    const S = drones;
+    const t = (now - S.start) / 1000;
+
+    // Advance to the next scene; after the playlist ends, a fresh random one is drawn (name always in between).
+    while (t - S.sceneStart >= S.scenes[S.idx].dur) {
+        S.sceneStart += S.scenes[S.idx].dur;
+        if (++S.idx >= S.scenes.length) { S.scenes = droneScenes(S, false); S.idx = 0; }
+        prepareScene(S, S.scenes[S.idx]);
     }
-    const t = (now - drones.start) / 1000;
+    const sc = S.scenes[S.idx], st = t - S.sceneStart;
     const sp = {};
-    // Timeline (loops after the intro): rise 0-3s · swirl 3-6s · name 6-16s · trophy 16-21s · name again ...
-    const loopT = t < 21 ? t : 6 + ((t - 21) % 15);
-    const k = 1 - Math.pow(0.12, dt);
-    for (const d of drones.list) {
+    const k = 1 - Math.pow(sc.ease, dt);
+    const n = S.list.length;
+    for (let i = 0; i < n; i++) {
+        const d = S.list[i];
+        const u = i / n;
         let gx, gy;
-        if (loopT < 3) {                                   // take-off: drift up slowly in a column
-            gx = d.x; gy = H * 0.9 - (loopT / 3) * H * 0.3 - (d.r - 60);
-        } else if (loopT < 6 || (t >= 21 && loopT < 6.01)) { // spinning rings in the sky
-            const a = d.a + loopT * 0.9 * (d.r % 44 ? 1 : -1);
-            gx = W / 2 + Math.cos(a) * d.r * 1.6; gy = H * 0.4 + Math.sin(a) * d.r * 0.8;
-        } else if (loopT < 16) {                            // the winner's name, drones arrive one by one
-            const arrive = (d.a / (Math.PI * 2)) * 3;       // spread arrivals over 3 seconds
-            if (loopT - 6 < arrive) { gx = d.x; gy = d.y; }
-            else { gx = d.tx; gy = d.ty + Math.sin(now / 500 + d.tx / 50) * 3; }
-        } else {                                            // trophy
-            gx = d.cx; gy = d.cy + Math.sin(now / 400 + d.cx / 30) * 2;
+        if (st < sc.delay(u)) { gx = d.x; gy = d.y; }      // staggered arrival: hover in place until it's your turn
+        else switch (sc.kind) {
+            case "rise": gx = d.x; gy = H * 0.9 - (st / sc.dur) * H * 0.3 - d.lane * 20; break;
+            case "rings": {
+                const a = d.a + st * S.spinSpeed * (d.lane % 2 ? S.spinDir : -S.spinDir);
+                const r = 60 + d.lane * 22;
+                gx = W / 2 + Math.cos(a) * r * 1.6; gy = H * 0.4 + Math.sin(a) * r * 0.8; break;
+            }
+            case "spiral": {
+                const a = d.a * 3 + st * S.spinSpeed * S.spinDir;
+                const r = 20 + u * Math.min(W, H) * 0.42;
+                gx = W / 2 + Math.cos(a) * r; gy = H * 0.42 + Math.sin(a) * r * 0.7; break;
+            }
+            case "wave":
+                gx = W * (0.05 + 0.9 * ((u * 7) % 1));
+                gy = H * (0.2 + 0.08 * Math.floor(u * 7)) + Math.sin(gx / 60 - st * 3 * S.spinDir) * 25; break;
+            case "sphere": {                               // rotating 3D globe
+                const lat = Math.acos(1 - 2 * u), lon = d.a * 13 + st * S.spinSpeed * S.spinDir;
+                const R = Math.min(W, H) * 0.3;
+                gx = W / 2 + Math.sin(lat) * Math.cos(lon) * R; gy = H * 0.42 + Math.cos(lat) * R; break;
+            }
+            default:                                       // fixed shapes: name, trophy, star, heart
+                gx = d.tx; gy = d.ty + Math.sin(now / 500 + d.tx / 50) * 3;
         }
         d.x += (gx - d.x) * k;
         d.y += (gy - d.y) * k;
 
-        // Colour wave rolling through the formation while the name is up.
-        let hue = d.hue;
-        if (loopT >= 9 && loopT < 16) {
-            const wave = Math.sin(d.tx / 70 - now / 350);
-            hue = wave > 0.6 ? "#ffffff" : wave < -0.6 ? "#fde047" : color;
-        } else if (loopT >= 16) hue = "#fde047";
+        let hue = S.palette[d.lane % S.palette.length];
+        if (sc.kind === "name" && st > 3) {
+            hue = droneColorFx(S, d, u, now);
+        } else if (sc.kind === "trophy") hue = "#fde047";
+        else if (sc.kind === "heart") hue = "#f43f5e";
         ctx.globalAlpha = 0.65 + 0.35 * Math.sin(now / 220 + d.a * 7);
         drawSprite(sp[hue] ??= glowSprite(hue, 1.8, 4), d.x, d.y);
     }
     ctx.globalAlpha = 1;
-    if (loopT > 7 && Math.random() < 0.03)
-        burst(W * (0.1 + 0.8 * Math.random()), 30 + Math.random() * 60, ["#22d3ee", "#f472b6", "#fde047"][Math.floor(Math.random() * 3)], 24, 140);
+    if (sc.kind !== "rise" && Math.random() < S.fireworks)
+        burst(W * (0.1 + 0.8 * Math.random()), 30 + Math.random() * 60, S.palette[Math.floor(Math.random() * S.palette.length)], 24, 140);
+}
+
+const pick = a => a[Math.floor(Math.random() * a.length)];
+const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+
+// Every show gets its own palette, spin direction/speed, colour effect, fireworks rate and scene order.
+function newDroneShow(name, color, now) {
+    const text = nameTargets(name);
+    const n = text.length;
+    const S = {
+        name, color, start: now, sceneStart: 0, idx: 0, nameTargets: text,
+        palette: [color, ...pick([["#fde047", "#ffffff"], ["#22d3ee", "#f472b6"], ["#a3e635", "#fde047"], ["#c084fc", "#ffffff"], ["#fb923c", "#facc15"]])],
+        spinDir: Math.random() < 0.5 ? 1 : -1,
+        spinSpeed: 0.6 + Math.random() * 0.8,
+        colorFx: pick(["wave", "sparkle", "rainbow", "pulse"]),
+        fireworks: 0.015 + Math.random() * 0.035,
+        list: [],
+    };
+    const start = pick(["bottom", "sides", "center"]);
+    for (let i = 0; i < n; i++) {
+        let x, y;
+        if (start === "bottom") { x = W * (0.1 + 0.8 * Math.random()); y = H + 20 + Math.random() * 60; }
+        else if (start === "sides") { x = i % 2 ? -20 - Math.random() * 60 : W + 20 + Math.random() * 60; y = H * (0.3 + 0.6 * Math.random()); }
+        else { x = W / 2 + (Math.random() - 0.5) * 20; y = H + 20; }
+        S.list.push({ x, y, tx: 0, ty: 0, a: (i / n) * Math.PI * 2, lane: i % 5 });
+    }
+    S.scenes = droneScenes(S, true);
+    prepareScene(S, S.scenes[0]);
+    return S;
+}
+
+// A random playlist: (rise) → effect → name → effect/shape → name → ...
+function droneScenes(S, intro) {
+    const dyn = shuffle(["rings", "spiral", "wave", "sphere"]);
+    const shapes = shuffle(["trophy", "star", "heart"]);
+    const stagger = () => pick([u => 0, u => u * 3, u => (1 - u) * 3, u => Math.abs(u - 0.5) * 4]);
+    const scene = kind => ({ kind, dur: kind === "name" ? 8 + Math.random() * 4 : 4 + Math.random() * 3, ease: 0.08 + Math.random() * 0.08, delay: kind === "name" ? stagger() : () => 0 });
+    const list = intro ? [scene("rise")] : [];
+    list.push(scene(dyn[0]), scene("name"), scene(Math.random() < 0.6 ? shapes[0] : dyn[1]), scene("name"), scene(shapes[1]));
+    if (intro) list[0].dur = 3;
+    return list;
+}
+
+function prepareScene(S, sc) {
+    let pts = null;
+    if (sc.kind === "name") pts = S.nameTargets;
+    else if (sc.kind === "trophy") pts = trophyTargets(S.list.length);
+    else if (sc.kind === "star") pts = starTargets(S.list.length);
+    else if (sc.kind === "heart") pts = heartTargets(S.list.length);
+    if (pts) S.list.forEach((d, i) => { d.tx = pts[i].x; d.ty = pts[i].y; });
+}
+
+function droneColorFx(S, d, u, now) {
+    switch (S.colorFx) {
+        case "sparkle": return Math.random() < 0.04 ? "#ffffff" : S.color;
+        case "rainbow": return `hsl(${Math.floor((d.tx / W * 360 + now / 10) % 360 / 30) * 30}, 90%, 65%)`;
+        case "pulse": return Math.sin(now / 300) > 0.3 ? S.palette[1] : S.color;
+        default: { const w = Math.sin(d.tx / 70 - now / 350 * S.spinDir); return w > 0.6 ? S.palette[2] : w < -0.6 ? S.palette[1] : S.color; }
+    }
+}
+
+function starTargets(n) {
+    const pts = [], cx = W / 2, cy = H * 0.4, R = Math.min(W, H) * 0.3;
+    for (let i = 0; i < n; i++) {
+        const u = (i / n) * 10, seg = Math.floor(u), f = u - seg;
+        const a0 = -Math.PI / 2 + seg * Math.PI / 5, a1 = a0 + Math.PI / 5;
+        const r0 = seg % 2 ? R * 0.42 : R, r1 = seg % 2 ? R : R * 0.42;
+        pts.push({ x: cx + Math.cos(a0) * r0 * (1 - f) + Math.cos(a1) * r1 * f, y: cy + Math.sin(a0) * r0 * (1 - f) + Math.sin(a1) * r1 * f });
+    }
+    return pts;
+}
+
+function heartTargets(n) {
+    const pts = [], cx = W / 2, cy = H * 0.38, s = Math.min(W, H) * 0.018;
+    for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2, rr = i % 3 ? 1 : 0.6 + Math.random() * 0.4;
+        pts.push({ x: cx + 16 * Math.pow(Math.sin(a), 3) * s * rr, y: cy - (13 * Math.cos(a) - 5 * Math.cos(2 * a) - 2 * Math.cos(3 * a) - Math.cos(4 * a)) * s * rr });
+    }
+    return pts;
 }
 
 // Points outlining a trophy in the sky.

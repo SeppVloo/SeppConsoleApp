@@ -36,9 +36,9 @@ Het is bedoeld als bron voor ontwikkelaars én voor een AI-agent die het spel mo
 - Veld 800×450. Slots: `team = slot % 2` (0 = links, 1 = rechts), `lane = slot / 2`.
 - 1v1 = slots 0 en 1; 2v2 = slots 0–3, ieder team een boven- en onderbaan.
 - Tick in vaste substappen (≤ 1/120 s) zodat de bal niet door een batje kan tunnelen.
-- Effect/spin: beweging van het batje bij raken geeft curve aan de bal.
+- Effect/spin: beweging van het batje bij raken geeft curve aan de bal. Effect neemt exponentieel af in de tijd (×0,6 per seconde) en blijft na stuiten tegen boven-/onderkant behouden: gespiegeld en ×0,55 per stuit (`SpinKeptPerBounce`).
 - 2v2: optioneel botsen teamgenoten (knockback + korte stun).
-- Wint: eerste tot `MaxScore` (7). Drone-show met de winnaarsnaam.
+- Wint: eerste tot `MaxScore` (7). Drone-show met de winnaarsnaam. Elke show is anders: willekeurig palet, startpositie, draairichting/-snelheid, kleureffect (golf/sparkle/regenboog/puls), vuurwerk-frequentie en een willekeurige scènereeks (ringen, spiraal, golf, bol, trofee, ster, hart) met de naam steeds ertussen.
 
 ### Power-ups
 - Nieuwe power-up = subclass van `PowerUp` + toevoegen aan `PowerUpRegistry.All`. Effecten via `Modify` (wordt elke tick opnieuw berekend, dus stapelen werkt vanzelf) of eenmalig via `Activate`.
@@ -79,7 +79,7 @@ Elke plek (behalve "Jij", slot 0) heeft één van drie types; tikken wisselt in 
 
 Volgorde van boven naar beneden:
 1. Terug naar Gameplein, logo, spelersniveau.
-2. Statusmelding (indien aanwezig).
+2. Statusmelding (indien aanwezig), weg te klikken met ✕.
 3. **Tabs:** 🎮 *Nieuw spel* | 🤝 *Meedoen* (badge met aantal beschikbare spellen).
    - *Nieuw spel:* 1v1/2v2, twee kolommen LINKS/RECHTS met plek-kaarten. "Jij"-kaart bevat het naamveld. Lokale plekken hebben een naamveld; computerplekken de niveaukeuze. Elke speler-kaart toont de besturing. Bij 🌐-plekken: keuze Wifi/Internet. Samenvatting + startknop.
    - *Meedoen:* Wifi/Internet, aantal spelers op dit apparaat (1–3) met namen, lijst met spellen ("Meedoen →"), inklapbare verbindingsinfo.
@@ -120,4 +120,5 @@ Volgorde van boven naar beneden:
 - **Meerdere spelers op één apparaat:** plek-type 📱, multi-touch per helft, eigen toetsen per speler, namen per lokale speler.
 - **Besturing:** 1 speler kan toetsen (W/S, ↑/↓) en muis gebruiken; bij meerdere spelers op laptop alleen toetsenbord.
 - **Meerdere spelers per apparaat online:** meedoen met 1–3 spelers; host deelt meerdere slots toe.
-- **Lobby herontwerp:** tabs Nieuw spel/Meedoen, naam in eigen plek-kaart, instellingen inklapbaar, touch-apparaten tonen geen toetsenbord-hints. Dit document toegevoegd.
+touch-apparaten tonen geen toetsenbord-hints. Dit document toegevoegd.
+- **Polish:** statusmelding (bv. "De host is gestopt") weg te klikken; effect blijft na stuiten en neemt exponentieel af; drone-show met afwisseling.
